@@ -1,0 +1,11 @@
+node_modules/
+.env
+__pycache__/
+*.pyc
+venv/
+.venv/
+*.log
+.DS_Store
+dist/
+build/
+.multifleet/
