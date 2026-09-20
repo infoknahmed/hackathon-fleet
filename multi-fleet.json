@@ -3,7 +3,7 @@
   "priority": 0,
   "peers": [
     {"name": "laptop-b", "host": "192.168.1.14"},
-    {"name": "laptop-c", "host": "192.168.1.y"}
+    {"name": "laptop-c", "host": "192.168.1.53"}
   ],
   "fallbackChain": ["discord", "nats", "http", "ssh", "git"]
 }
