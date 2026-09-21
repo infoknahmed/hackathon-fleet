@@ -13,10 +13,12 @@ import {
   Cell,
   Legend,
 } from "recharts"
+import { MessageSquare, Users, Zap, Siren, ShieldCheck } from "lucide-react"
 import { StatCard } from "../components/StatCard"
 import { subscribeToMessages, getUserId } from "../lib/messageBus"
 import type { VaakSetuMessage } from "../lib/messageBus"
-import { COLORS, FONT } from "../theme"
+import { COLORS, FONT, RADIUS, SHADOW } from "../theme"
+import TopNav from "../components/TopNav"
 
 const MOOD_COLORS: Record<string, string> = {
   Positive: COLORS.success,
@@ -80,12 +82,15 @@ export default function AdminDashboard() {
   }, [messages])
 
   const cardStyle = {
-    background: COLORS.card,
-    border: `1px solid ${COLORS.border}`,
-    borderRadius: 16,
+    background: "rgba(30, 41, 59, 0.55)",
+    backdropFilter: "blur(20px) saturate(150%)",
+    WebkitBackdropFilter: "blur(20px) saturate(150%)",
+    border: `1px solid ${COLORS.borderGlass}`,
+    borderRadius: RADIUS.lg,
     padding: "20px 22px",
     fontFamily: FONT,
     color: COLORS.text,
+    boxShadow: SHADOW.md,
   }
 
   return (
@@ -95,147 +100,187 @@ export default function AdminDashboard() {
         background: COLORS.bg,
         color: COLORS.text,
         fontFamily: FONT,
-        padding: "24px 28px 40px",
-        boxSizing: "border-box",
         display: "flex",
         flexDirection: "column",
-        gap: 22,
+        boxSizing: "border-box",
       }}
     >
-      {/* Header */}
-      <header style={{ display: "flex", alignItems: "center", gap: 14 }}>
-        <span style={{ fontSize: 32 }} aria-hidden="true">
-          🦸
-        </span>
-        <div style={{ flex: 1 }}>
-          <h1 style={{ margin: 0, fontSize: 28, fontWeight: 800 }}>Admin Dashboard</h1>
-          <p style={{ margin: 0, fontSize: 14, color: COLORS.textDim }}>
-            Live platform analytics · {getUserId()}
-          </p>
-        </div>
-        <span
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 8,
-            background: COLORS.successSoft,
-            border: `1px solid ${COLORS.success}`,
-            borderRadius: 999,
-            padding: "8px 16px",
-            fontSize: 14,
-            fontWeight: 700,
-            color: COLORS.success,
-          }}
-        >
-          <motion.span
-            aria-hidden="true"
-            animate={{ opacity: [1, 0.3, 1] }}
-            transition={{ repeat: Infinity, duration: 1.4 }}
+      <TopNav
+        right={
+          <span
             style={{
-              width: 10,
-              height: 10,
-              borderRadius: "50%",
-              background: COLORS.success,
-              display: "inline-block",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              background: COLORS.successSoft,
+              border: `1px solid ${COLORS.success}`,
+              borderRadius: RADIUS.pill,
+              padding: "8px 16px",
+              fontSize: 13,
+              fontWeight: 700,
+              color: COLORS.success,
+              whiteSpace: "nowrap",
             }}
-          />
-          WebSocket: BroadcastChannel — Connected
-        </span>
-      </header>
+          >
+            <motion.span
+              aria-hidden="true"
+              animate={{ opacity: [1, 0.3, 1] }}
+              transition={{ repeat: Infinity, duration: 1.4 }}
+              style={{
+                width: 10,
+                height: 10,
+                borderRadius: "50%",
+                background: COLORS.success,
+                display: "inline-block",
+              }}
+            />
+            <ShieldCheck size={15} strokeWidth={2.4} aria-hidden="true" />
+            BroadcastChannel — Connected
+          </span>
+        }
+      />
 
-      {/* Stat cards */}
-      <section
-        aria-label="Platform statistics"
-        style={{ display: "flex", gap: 16, flexWrap: "wrap" }}
+      <motion.main
+        initial={{ opacity: 0, y: 14 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4 }}
+        style={{
+          flex: 1,
+          padding: "22px 28px 40px",
+          display: "flex",
+          flexDirection: "column",
+          gap: 22,
+          maxWidth: 1280,
+          width: "100%",
+          margin: "0 auto",
+        }}
       >
-        <StatCard icon="💬" label="Total Messages" value={total} accent={COLORS.accent} />
-        <StatCard icon="👤" label="Active Users" value={1} accent={COLORS.success} />
-        <StatCard
-          icon="⚡"
-          label="Avg Latency"
-          value={`${avgLatency} ms`}
-          accent={COLORS.warning}
-        />
-        <StatCard
-          icon="🚨"
-          label="Emergency Alerts"
-          value={emergencies}
-          accent={COLORS.danger}
-        />
-      </section>
-
-      {/* Charts */}
-      <section style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-        <div style={{ ...cardStyle, flex: 2, minWidth: 340, height: 320 }}>
-          <h2 style={{ margin: "0 0 12px", fontSize: 17, fontWeight: 800 }}>
-            Messages per minute (last 20 min)
-          </h2>
-          <ResponsiveContainer width="100%" height={250}>
-            <LineChart data={perMinute}>
-              <CartesianGrid stroke={COLORS.border} strokeDasharray="3 3" />
-              <XAxis dataKey="minute" stroke={COLORS.textDim} fontSize={11} />
-              <YAxis allowDecimals={false} stroke={COLORS.textDim} fontSize={12} />
-              <Tooltip
-                contentStyle={{
-                  background: COLORS.card,
-                  border: `1px solid ${COLORS.border}`,
-                  borderRadius: 10,
-                  color: COLORS.text,
-                }}
-              />
-              <Line
-                type="monotone"
-                dataKey="count"
-                stroke={COLORS.accent}
-                strokeWidth={2.5}
-                dot={false}
-                isAnimationActive={false}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-
-        <div style={{ ...cardStyle, flex: 1, minWidth: 300, height: 320 }}>
-          <h2 style={{ margin: "0 0 12px", fontSize: 17, fontWeight: 800 }}>
-            Mood distribution
-          </h2>
-          {moodData.length === 0 ? (
-            <p style={{ color: COLORS.textDim, fontSize: 15 }}>
-              No mood data yet — waiting for messages.
+        {/* Header */}
+        <header style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 56,
+              height: 56,
+              borderRadius: RADIUS.xl,
+              background: "rgba(250, 204, 21, 0.12)",
+              border: "1px solid rgba(250, 204, 21, 0.35)",
+              color: COLORS.warning,
+            }}
+            aria-hidden="true"
+          >
+            <ShieldCheck size={30} strokeWidth={2.2} />
+          </span>
+          <div style={{ flex: 1, minWidth: 220 }}>
+            <h1 style={{ margin: 0, fontSize: 28, fontWeight: 800 }}>Admin Dashboard</h1>
+            <p style={{ margin: 0, fontSize: 14, color: COLORS.textDim }}>
+              Live platform analytics · {getUserId()}
             </p>
-          ) : (
+          </div>
+        </header>
+
+        {/* Stat cards */}
+        <section
+          aria-label="Platform statistics"
+          style={{ display: "flex", gap: 16, flexWrap: "wrap" }}
+        >
+          <StatCard icon={MessageSquare} label="Total Messages" value={total} accent={COLORS.accent} />
+          <StatCard icon={Users} label="Active Users" value={1} accent={COLORS.success} />
+          <StatCard
+            icon={Zap}
+            label="Avg Latency"
+            value={`${avgLatency} ms`}
+            accent={COLORS.warning}
+          />
+          <StatCard
+            icon={Siren}
+            label="Emergency Alerts"
+            value={emergencies}
+            accent={COLORS.danger}
+          />
+        </section>
+
+        {/* Charts */}
+        <section style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+          <motion.div
+            whileHover={{ y: -2 }}
+            style={{ ...cardStyle, flex: 2, minWidth: 340, height: 320 }}
+          >
+            <h2 style={{ margin: "0 0 12px", fontSize: 17, fontWeight: 800 }}>
+              Messages per minute (last 20 min)
+            </h2>
             <ResponsiveContainer width="100%" height={250}>
-              <PieChart>
-                <Pie
-                  data={moodData}
-                  dataKey="value"
-                  nameKey="name"
-                  innerRadius={55}
-                  outerRadius={85}
-                  paddingAngle={3}
-                  isAnimationActive={false}
-                >
-                  {moodData.map((entry) => (
-                    <Cell
-                      key={entry.name}
-                      fill={MOOD_COLORS[entry.name] ?? COLORS.accent}
-                    />
-                  ))}
-                </Pie>
-                <Legend wrapperStyle={{ fontSize: 13, color: COLORS.text }} />
+              <LineChart data={perMinute}>
+                <CartesianGrid stroke={COLORS.border} strokeDasharray="3 3" />
+                <XAxis dataKey="minute" stroke={COLORS.textDim} fontSize={11} />
+                <YAxis allowDecimals={false} stroke={COLORS.textDim} fontSize={12} />
                 <Tooltip
                   contentStyle={{
-                    background: COLORS.card,
+                    background: "#1E293B",
                     border: `1px solid ${COLORS.border}`,
-                    borderRadius: 10,
+                    borderRadius: RADIUS.sm,
                     color: COLORS.text,
                   }}
                 />
-              </PieChart>
+                <Line
+                  type="monotone"
+                  dataKey="count"
+                  stroke={COLORS.accent}
+                  strokeWidth={2.5}
+                  dot={false}
+                  isAnimationActive={false}
+                />
+              </LineChart>
             </ResponsiveContainer>
-          )}
-        </div>
-      </section>
+          </motion.div>
+
+          <motion.div
+            whileHover={{ y: -2 }}
+            style={{ ...cardStyle, flex: 1, minWidth: 300, height: 320 }}
+          >
+            <h2 style={{ margin: "0 0 12px", fontSize: 17, fontWeight: 800 }}>
+              Mood distribution
+            </h2>
+            {moodData.length === 0 ? (
+              <p style={{ color: COLORS.textDim, fontSize: 15 }}>
+                No mood data yet — waiting for messages.
+              </p>
+            ) : (
+              <ResponsiveContainer width="100%" height={250}>
+                <PieChart>
+                  <Pie
+                    data={moodData}
+                    dataKey="value"
+                    nameKey="name"
+                    innerRadius={55}
+                    outerRadius={85}
+                    paddingAngle={3}
+                    isAnimationActive={false}
+                  >
+                    {moodData.map((entry) => (
+                      <Cell
+                        key={entry.name}
+                        fill={MOOD_COLORS[entry.name] ?? COLORS.accent}
+                      />
+                    ))}
+                  </Pie>
+                  <Legend wrapperStyle={{ fontSize: 13, color: COLORS.text }} />
+                  <Tooltip
+                    contentStyle={{
+                      background: "#1E293B",
+                      border: `1px solid ${COLORS.border}`,
+                      borderRadius: RADIUS.sm,
+                      color: COLORS.text,
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
+          </motion.div>
+        </section>
+      </motion.main>
     </div>
   )
 }

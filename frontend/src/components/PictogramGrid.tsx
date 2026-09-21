@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from "motion/react"
-import { COLORS, FONT } from "../theme"
+import { COLORS, FONT, RADIUS, TAP_MIN } from "../theme"
 
 export interface Pictogram {
   id: string
@@ -25,15 +25,19 @@ export const MAX_SELECTION = 3
 interface Props {
   selected: Pictogram[]
   onSelect: (p: Pictogram) => void
+  /** Grid column count (default 3). */
+  columns?: number
+  /** Compact tiles for the conversation panel (default false). */
+  compact?: boolean
 }
 
-export function PictogramGrid({ selected, onSelect }: Props) {
+export function PictogramGrid({ selected, onSelect, columns = 3, compact = false }: Props) {
   return (
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "repeat(3, 1fr)",
-        gap: 12,
+        gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+        gap: compact ? 8 : 12,
         fontFamily: FONT,
       }}
       role="group"
@@ -46,6 +50,7 @@ export function PictogramGrid({ selected, onSelect }: Props) {
             key={p.id}
             type="button"
             onClick={() => onSelect(p)}
+            whileHover={{ y: -2 }}
             whileTap={{ scale: 0.95 }}
             animate={
               isSelected
@@ -56,7 +61,7 @@ export function PictogramGrid({ selected, onSelect }: Props) {
                 : {
                     scale: 1,
                     boxShadow:
-                      "0 0 0 0 rgba(0,0,0,0), 0 0 0 1px rgba(51,65,85,0.9)",
+                      "0 4px 16px rgba(2, 8, 20, 0.3), 0 0 0 1px rgba(148,163,184,0.16)",
                   }
             }
             transition={{ type: "spring", stiffness: 400, damping: 22 }}
@@ -65,13 +70,19 @@ export function PictogramGrid({ selected, onSelect }: Props) {
               flexDirection: "column",
               alignItems: "center",
               justifyContent: "center",
-              gap: 8,
-              background: COLORS.card,
+              gap: compact ? 4 : 8,
+              background: isSelected
+                ? "rgba(0, 180, 216, 0.14)"
+                : "rgba(30, 41, 59, 0.55)",
+              backdropFilter: "blur(20px) saturate(150%)",
+              WebkitBackdropFilter: "blur(20px) saturate(150%)",
               color: COLORS.text,
-              border: isSelected ? `2px solid ${COLORS.accent}` : "2px solid transparent",
-              borderRadius: 18,
-              minHeight: 110,
-              padding: 12,
+              border: isSelected
+                ? `2px solid ${COLORS.accent}`
+                : "2px solid rgba(148, 163, 184, 0.14)",
+              borderRadius: compact ? RADIUS.md : 18,
+              minHeight: compact ? 78 : 110,
+              padding: compact ? 8 : 12,
               cursor: "pointer",
               WebkitTapHighlightColor: "transparent",
               touchAction: "manipulation",
@@ -80,10 +91,15 @@ export function PictogramGrid({ selected, onSelect }: Props) {
             aria-pressed={isSelected}
             aria-label={p.aria}
           >
-            <span style={{ fontSize: 44, lineHeight: 1 }} aria-hidden="true">
+            <span
+              style={{ fontSize: compact ? 28 : 44, lineHeight: 1 }}
+              aria-hidden="true"
+            >
               {p.emoji}
             </span>
-            <span style={{ fontSize: 19, fontWeight: 700 }}>{p.label}</span>
+            <span style={{ fontSize: compact ? 14 : 19, fontWeight: 700 }}>
+              {p.label}
+            </span>
           </motion.button>
         )
       })}
@@ -92,7 +108,13 @@ export function PictogramGrid({ selected, onSelect }: Props) {
 }
 
 /** Animated selection chips shown above the grid. */
-export function SelectionChips({ selected }: { selected: Pictogram[] }) {
+export function SelectionChips({
+  selected,
+  max = MAX_SELECTION,
+}: {
+  selected: Pictogram[]
+  max?: number
+}) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", flex: 1 }}>
       <AnimatePresence initial={false}>
@@ -111,7 +133,7 @@ export function SelectionChips({ selected }: { selected: Pictogram[] }) {
               background: COLORS.accentSoft,
               color: COLORS.text,
               border: `1px solid ${COLORS.accent}`,
-              borderRadius: 999,
+              borderRadius: RADIUS.pill,
               padding: "8px 14px",
               fontSize: 18,
               fontWeight: 700,
@@ -125,19 +147,19 @@ export function SelectionChips({ selected }: { selected: Pictogram[] }) {
       </AnimatePresence>
       {selected.length === 0 && (
         <span style={{ color: COLORS.textDim, fontSize: 16, fontWeight: 500 }}>
-          Tap {MAX_SELECTION} pictograms below…
+          Tap {max} pictograms below…
         </span>
       )}
       {selected.length > 0 &&
-        selected.length < MAX_SELECTION &&
-        Array.from({ length: MAX_SELECTION - selected.length }).map((_, i) => (
+        selected.length < max &&
+        Array.from({ length: max - selected.length }).map((_, i) => (
           <span
             key={`slot-${i}`}
             aria-hidden="true"
             style={{
               color: COLORS.textDim,
               border: `1px dashed ${COLORS.border}`,
-              borderRadius: 999,
+              borderRadius: RADIUS.pill,
               padding: "8px 14px",
               fontSize: 14,
               letterSpacing: 2,
@@ -149,3 +171,5 @@ export function SelectionChips({ selected }: { selected: Pictogram[] }) {
     </div>
   )
 }
+
+export { TAP_MIN }

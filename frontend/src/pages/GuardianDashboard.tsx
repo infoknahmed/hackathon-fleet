@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { AnimatePresence, motion } from "motion/react"
-import { MessageCard } from "../components/MessageCard"
-import { subscribeToMessages, sendMessage, getUserId } from "../lib/messageBus"
+import { Trash2, Radio, X } from "lucide-react"
+import { FeedMessageCard } from "../components/MessageCard"
+import { subscribeToMessages, sendMessage } from "../lib/messageBus"
 import type { VaakSetuMessage } from "../lib/messageBus"
 import { speak, playEmergencyBeep } from "../lib/speech"
 import { startDemo, stopDemo } from "../lib/demoRunner"
-import { COLORS, FONT } from "../theme"
+import { COLORS, FONT, RADIUS, SHADOW, TAP_MIN } from "../theme"
+import TopNav from "../components/TopNav"
 
 const TOAST_MS = 2000
 
@@ -99,83 +101,60 @@ export default function GuardianDashboard() {
         boxSizing: "border-box",
       }}
     >
-      {/* Header */}
-      <header
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 14,
-          padding: "18px 24px",
-          borderBottom: `1px solid ${COLORS.border}`,
-          background: "rgba(30, 41, 59, 0.4)",
-          position: "sticky",
-          top: 0,
-          zIndex: 10,
-          flexWrap: "wrap",
-        }}
-      >
-        <span style={{ fontSize: 30 }} aria-hidden="true">
-          👨‍👩‍👧
-        </span>
-        <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, flex: 1 }}>
-          Guardian Dashboard
-        </h1>
-
-        <span
-          aria-label="Live feed active"
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 8,
-            background: COLORS.successSoft,
-            border: `1px solid ${COLORS.success}`,
-            borderRadius: 999,
-            padding: "6px 14px",
-            fontSize: 14,
-            fontWeight: 800,
-            color: COLORS.success,
-            letterSpacing: 1,
-          }}
-        >
-          <motion.span
-            aria-hidden="true"
-            animate={{ opacity: [1, 0.3, 1] }}
-            transition={{ repeat: Infinity, duration: 1.4 }}
-            style={{
-              width: 10,
-              height: 10,
-              borderRadius: "50%",
-              background: COLORS.success,
-              display: "inline-block",
-            }}
-          />
-          LIVE
-        </span>
-
-        <span style={{ fontSize: 14, color: COLORS.textDim, fontWeight: 600 }}>
-          User: {getUserId()}
-        </span>
-
-        <button
-          type="button"
-          onClick={() => setMessages([])}
-          aria-label="Clear all messages from the feed"
-          style={{
-            minHeight: 48,
-            padding: "10px 20px",
-            background: "transparent",
-            color: COLORS.textDim,
-            border: `1px solid ${COLORS.border}`,
-            borderRadius: 12,
-            fontSize: 15,
-            fontWeight: 700,
-            cursor: "pointer",
-            fontFamily: FONT,
-          }}
-        >
-          Clear Feed
-        </button>
-      </header>
+      <TopNav
+        right={
+          <>
+            <span
+              aria-label="Live feed active"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                background: COLORS.successSoft,
+                border: `1px solid ${COLORS.success}`,
+                borderRadius: RADIUS.pill,
+                padding: "6px 14px",
+                fontSize: 14,
+                fontWeight: 800,
+                color: COLORS.success,
+                letterSpacing: 1,
+              }}
+            >
+              <motion.span
+                aria-hidden="true"
+                animate={{ opacity: [1, 0.3, 1] }}
+                transition={{ repeat: Infinity, duration: 1.4 }}
+                style={{
+                  width: 10,
+                  height: 10,
+                  borderRadius: "50%",
+                  background: COLORS.success,
+                  display: "inline-block",
+                }}
+              />
+              <Radio size={14} strokeWidth={2.6} aria-hidden="true" />
+              LIVE
+            </span>
+            <button
+              type="button"
+              onClick={() => setMessages([])}
+              aria-label="Clear all messages from the feed"
+              className="btn-ghost"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 7,
+                minHeight: TAP_MIN,
+                padding: "10px 20px",
+                fontSize: 15,
+                fontFamily: FONT,
+              }}
+            >
+              <Trash2 size={16} strokeWidth={2.4} aria-hidden="true" /> Clear Feed
+            </button>
+          </>
+        }
+      />
 
       {/* Demo mode banner */}
       <AnimatePresence>
@@ -198,6 +177,9 @@ export default function GuardianDashboard() {
           >
             <span
               style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
                 fontSize: 15,
                 fontWeight: 800,
                 color: COLORS.warning,
@@ -211,19 +193,22 @@ export default function GuardianDashboard() {
               onClick={handleStopDemo}
               aria-label="Stop the scripted demo"
               style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
                 minHeight: 36,
                 padding: "6px 16px",
                 background: COLORS.warning,
                 color: "#1F1300",
                 border: "none",
-                borderRadius: 10,
+                borderRadius: RADIUS.sm,
                 fontSize: 14,
                 fontWeight: 800,
                 cursor: "pointer",
                 fontFamily: FONT,
               }}
             >
-              Stop Demo
+              <X size={15} strokeWidth={3} aria-hidden="true" /> Stop Demo
             </button>
           </motion.div>
         )}
@@ -232,7 +217,10 @@ export default function GuardianDashboard() {
       {/* Feed */}
       <main style={{ flex: 1, padding: "20px 24px 32px", overflowY: "auto" }}>
         {messages.length === 0 ? (
-          <div
+          <motion.div
+            initial={{ opacity: 0, scale: 0.97 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.4 }}
             style={{
               height: "70vh",
               display: "flex",
@@ -244,7 +232,21 @@ export default function GuardianDashboard() {
             }}
             role="status"
           >
-            <span style={{ fontSize: 52 }} aria-hidden="true">
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: 92,
+                height: 92,
+                borderRadius: RADIUS.xl,
+                background: "rgba(30, 41, 59, 0.55)",
+                border: `1px solid ${COLORS.borderGlass}`,
+                fontSize: 44,
+                boxShadow: SHADOW.md,
+              }}
+              aria-hidden="true"
+            >
               📡
             </span>
             <p style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>
@@ -253,7 +255,7 @@ export default function GuardianDashboard() {
             <p style={{ fontSize: 15, margin: 0 }}>
               Open the User dashboard in another tab and tap pictograms.
             </p>
-          </div>
+          </motion.div>
         ) : (
           <div
             role="list"
@@ -268,7 +270,7 @@ export default function GuardianDashboard() {
           >
             <AnimatePresence initial={false}>
               {messages.map((m) => (
-                <MessageCard
+                <FeedMessageCard
                   key={m.id}
                   msg={m}
                   onReply={

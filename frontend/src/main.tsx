@@ -5,6 +5,7 @@ import RoleSelection from "./pages/RoleSelection"
 import UserDashboard from "./pages/UserDashboard"
 import GuardianDashboard from "./pages/GuardianDashboard"
 import AdminDashboard from "./pages/AdminDashboard"
+import ConversationPage from "./pages/ConversationPage"
 import "./index.css"
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
@@ -13,6 +14,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       <Routes>
         <Route path="/" element={<RoleSelection />} />
         <Route path="/user" element={<UserDashboard />} />
+        <Route path="/conversation" element={<ConversationPage />} />
         <Route path="/guardian" element={<GuardianDashboard />} />
         <Route path="/admin" element={<AdminDashboard />} />
         <Route path="*" element={<Navigate to="/" replace />} />

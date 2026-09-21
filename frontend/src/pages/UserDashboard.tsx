@@ -1,6 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import type { CSSProperties } from "react"
 import { AnimatePresence, motion } from "motion/react"
+import {
+  Volume2,
+  RotateCcw,
+  Trash2,
+  History,
+  SlidersHorizontal,
+  Mic,
+  Languages,
+  Check,
+  X,
+} from "lucide-react"
 import { PictogramGrid, SelectionChips } from "../components/PictogramGrid"
 import type { Pictogram } from "../components/PictogramGrid"
 import { predictSentence } from "../lib/predict"
@@ -20,7 +31,8 @@ import {
   waitForVoices,
 } from "../lib/speech"
 import type { VoiceSettings } from "../lib/speech"
-import { COLORS, FONT } from "../theme"
+import { COLORS, FONT, RADIUS, SHADOW, TAP_MIN } from "../theme"
+import TopNav from "../components/TopNav"
 
 const MAX_SELECTION = 3
 const HISTORY_KEY = "vaaksetu-history"
@@ -83,7 +95,7 @@ export default function UserDashboard() {
     }
   }, [language])
 
-  // Feature 2: receive guardian replies over the BroadcastChannel.
+  // Receive guardian replies over the BroadcastChannel.
   useEffect(() => {
     const unsubscribe = subscribeToMessages((msg) => {
       if (msg.type !== "reply") return
@@ -189,19 +201,34 @@ export default function UserDashboard() {
   const last20 = useMemo(() => history.slice(0, 20), [history])
 
   const tabButton = (id: Tab): CSSProperties => ({
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 7,
     flex: 1,
-    minHeight: 48,
+    minHeight: TAP_MIN,
     background: tab === id ? COLORS.accentSoft : "transparent",
-    color: tab === id ? COLORS.accent : COLORS.textDim,
+    color: tab === id ? COLORS.accentBright : COLORS.textDim,
     border: "none",
     borderBottom:
       tab === id ? `3px solid ${COLORS.accent}` : "3px solid transparent",
-    borderRadius: "10px 10px 0 0",
+    borderRadius: `${RADIUS.md} ${RADIUS.md} 0 0`,
     fontSize: 16,
     fontWeight: 700,
     cursor: "pointer",
     fontFamily: FONT,
   })
+
+  const selectStyle: CSSProperties = {
+    width: "100%",
+    minHeight: TAP_MIN,
+    background: "rgba(10, 25, 41, 0.6)",
+    color: COLORS.text,
+    border: `1px solid ${COLORS.borderGlass}`,
+    borderRadius: RADIUS.md,
+    padding: "10px 12px",
+    fontSize: 16,
+    fontFamily: FONT,
+  }
 
   return (
     <div
@@ -212,55 +239,54 @@ export default function UserDashboard() {
         fontFamily: FONT,
         display: "flex",
         flexDirection: "column",
-        maxWidth: 760,
+        maxWidth: 820,
         width: "100%",
         margin: "0 auto",
-        padding: "0 16px 120px",
+        padding: "0 16px 130px",
         boxSizing: "border-box",
       }}
     >
-      {/* Top bar */}
-      <header
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 14,
-          padding: "14px 0 10px",
-          position: "sticky",
-          top: 0,
-          background: COLORS.bg,
-          zIndex: 10,
-        }}
-      >
-        <span style={{ fontSize: 28 }} aria-hidden="true">
-          🗣️
-        </span>
-        <div style={{ flex: 1 }}>
-          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800 }}>VaakSetu</h1>
-          <p style={{ margin: 0, fontSize: 12, color: COLORS.accent, fontWeight: 600 }}>
+      <TopNav
+        right={
+          <span
+            style={{
+              fontSize: 13,
+              fontWeight: 700,
+              color: COLORS.textDim,
+              background: "rgba(148, 163, 184, 0.1)",
+              border: `1px solid ${COLORS.borderGlass}`,
+              borderRadius: RADIUS.pill,
+              padding: "6px 12px",
+              whiteSpace: "nowrap",
+            }}
+          >
             User · {getUserId()}
-          </p>
-        </div>
-        <nav
-          style={{ display: "flex", gap: 4, flex: 2, maxWidth: 420 }}
-          aria-label="User dashboard tabs"
-        >
-          <button type="button" style={tabButton("communicate")} onClick={() => setTab("communicate")}>
-            Communicate
-          </button>
-          <button type="button" style={tabButton("history")} onClick={() => setTab("history")}>
-            History
-          </button>
-          <button type="button" style={tabButton("settings")} onClick={() => setTab("settings")}>
-            Settings
-          </button>
-        </nav>
-      </header>
+          </span>
+        }
+      />
+
+      <motion.nav
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35 }}
+        style={{ display: "flex", gap: 4, padding: "14px 0 10px" }}
+        aria-label="User dashboard tabs"
+      >
+        <button type="button" style={tabButton("communicate")} onClick={() => setTab("communicate")}>
+          <Mic size={17} strokeWidth={2.4} aria-hidden="true" /> Communicate
+        </button>
+        <button type="button" style={tabButton("history")} onClick={() => setTab("history")}>
+          <History size={17} strokeWidth={2.4} aria-hidden="true" /> History
+        </button>
+        <button type="button" style={tabButton("settings")} onClick={() => setTab("settings")}>
+          <SlidersHorizontal size={17} strokeWidth={2.4} aria-hidden="true" /> Settings
+        </button>
+      </motion.nav>
 
       <main style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         {tab === "communicate" && (
           <>
-            {/* Feature 2: guardian reply banner (above the pictogram grid) */}
+            {/* Guardian reply banner */}
             <AnimatePresence>
               {lastReply && (
                 <motion.button
@@ -280,14 +306,17 @@ export default function UserDashboard() {
                     gap: 14,
                     width: "100%",
                     textAlign: "left",
-                    background: "#064E3B",
+                    background: "rgba(6, 78, 59, 0.72)",
+                    backdropFilter: "blur(20px) saturate(150%)",
+                    WebkitBackdropFilter: "blur(20px) saturate(150%)",
                     border: "none",
                     borderLeft: "4px solid #34D399",
-                    borderRadius: 14,
+                    borderRadius: RADIUS.lg,
                     padding: "16px 18px",
                     cursor: "pointer",
                     color: "#ECFDF5",
                     fontFamily: FONT,
+                    boxShadow: SHADOW.md,
                   }}
                 >
                   <span style={{ fontSize: 32, lineHeight: 1 }} aria-hidden="true">
@@ -320,13 +349,16 @@ export default function UserDashboard() {
                   {lastReply.read && (
                     <span
                       style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 4,
                         fontSize: 15,
                         fontWeight: 800,
                         color: "#6EE7B7",
                         whiteSpace: "nowrap",
                       }}
                     >
-                      ✓ Read
+                      <Check size={16} strokeWidth={3} aria-hidden="true" /> Read
                     </span>
                   )}
                 </motion.button>
@@ -341,12 +373,15 @@ export default function UserDashboard() {
                 display: "flex",
                 alignItems: "center",
                 gap: 12,
-                background: COLORS.card,
-                border: `1px solid ${COLORS.border}`,
-                borderRadius: 16,
+                background: "rgba(30, 41, 59, 0.55)",
+                backdropFilter: "blur(20px) saturate(150%)",
+                WebkitBackdropFilter: "blur(20px) saturate(150%)",
+                border: `1px solid ${COLORS.borderGlass}`,
+                borderRadius: RADIUS.lg,
                 padding: "10px 12px",
                 minHeight: 64,
                 flexWrap: "wrap",
+                boxShadow: SHADOW.sm,
               }}
             >
               <SelectionChips selected={selected} />
@@ -355,20 +390,18 @@ export default function UserDashboard() {
                 onClick={handleClear}
                 disabled={selected.length === 0}
                 aria-label="Clear selected pictograms"
+                className="btn-ghost"
                 style={{
-                  background: "transparent",
-                  color: COLORS.textDim,
-                  border: `1px solid ${COLORS.border}`,
-                  borderRadius: 12,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 7,
                   padding: "10px 18px",
                   fontSize: 16,
-                  fontWeight: 700,
-                  cursor: "pointer",
-                  minHeight: 48,
+                  minHeight: TAP_MIN,
                   fontFamily: FONT,
                 }}
               >
-                Clear
+                <Trash2 size={17} strokeWidth={2.4} aria-hidden="true" /> Clear
               </button>
             </div>
 
@@ -379,14 +412,17 @@ export default function UserDashboard() {
               <div
                 aria-live="polite"
                 style={{
-                  background: COLORS.card,
-                  border: `1px solid ${COLORS.border}`,
+                  background: "rgba(30, 41, 59, 0.55)",
+                  backdropFilter: "blur(20px) saturate(150%)",
+                  WebkitBackdropFilter: "blur(20px) saturate(150%)",
+                  border: `1px solid ${COLORS.borderGlass}`,
                   borderLeft: `5px solid ${COLORS.accent}`,
-                  borderRadius: 16,
+                  borderRadius: RADIUS.lg,
                   padding: "18px 20px",
                   minHeight: 84,
                   display: "flex",
                   alignItems: "center",
+                  boxShadow: SHADOW.sm,
                 }}
               >
                 {sentence ? (
@@ -421,23 +457,22 @@ export default function UserDashboard() {
                 <motion.button
                   type="button"
                   onClick={handleSpeak}
-                  whileTap={{ scale: 0.95 }}
+                  whileTap={{ scale: 0.96 }}
+                  whileHover={{ y: -2 }}
                   aria-label="Speak the sentence out loud and send it to the guardian"
+                  className="btn-gradient"
                   style={{
-                    background: COLORS.accent,
-                    color: "#04121F",
-                    border: "none",
-                    borderRadius: 16,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 10,
                     padding: "18px 24px",
                     fontSize: 24,
-                    fontWeight: 800,
-                    cursor: "pointer",
                     minHeight: 68,
-                    boxShadow: `0 6px 24px ${COLORS.accentSoft}`,
                     fontFamily: FONT,
                   }}
                 >
-                  🔊 Speak
+                  <Volume2 size={26} strokeWidth={2.6} aria-hidden="true" /> Speak
                 </motion.button>
               )}
 
@@ -446,20 +481,21 @@ export default function UserDashboard() {
                   type="button"
                   onClick={() => setTranslatedText(speakSentence(sentence) ?? "")}
                   aria-label="Speak the sentence again"
+                  className="btn-ghost"
                   style={{
-                    background: "transparent",
-                    color: COLORS.accent,
-                    border: `2px solid ${COLORS.accent}`,
-                    borderRadius: 16,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 9,
                     padding: "14px 24px",
                     fontSize: 19,
-                    fontWeight: 700,
-                    cursor: "pointer",
                     minHeight: 60,
+                    color: COLORS.accentBright,
+                    borderColor: "rgba(0, 180, 216, 0.5)",
                     fontFamily: FONT,
                   }}
                 >
-                  🔁 Speak Again
+                  <RotateCcw size={19} strokeWidth={2.5} aria-hidden="true" /> Speak Again
                 </button>
               )}
             </section>
@@ -467,7 +503,12 @@ export default function UserDashboard() {
         )}
 
         {tab === "history" && (
-          <section aria-label="Message history">
+          <motion.section
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3 }}
+            aria-label="Message history"
+          >
             <h2 style={{ fontSize: 20, fontWeight: 800, marginBottom: 12 }}>
               Last {last20.length} messages
             </h2>
@@ -477,17 +518,23 @@ export default function UserDashboard() {
               </p>
             ) : (
               <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 10 }}>
-                {last20.map((m) => (
-                  <li
+                {last20.map((m, i) => (
+                  <motion.li
                     key={m.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.03, duration: 0.25 }}
                     style={{
-                      background: COLORS.card,
-                      border: `1px solid ${COLORS.border}`,
-                      borderRadius: 12,
+                      background: "rgba(30, 41, 59, 0.55)",
+                      backdropFilter: "blur(20px) saturate(150%)",
+                      WebkitBackdropFilter: "blur(20px) saturate(150%)",
+                      border: `1px solid ${COLORS.borderGlass}`,
+                      borderRadius: RADIUS.md,
                       padding: "12px 16px",
                       display: "flex",
                       alignItems: "center",
                       gap: 10,
+                      boxShadow: SHADOW.sm,
                     }}
                   >
                     <span style={{ fontSize: 22 }} aria-hidden="true">
@@ -508,35 +555,42 @@ export default function UserDashboard() {
                         hour12: false,
                       })}
                     </span>
-                  </li>
+                  </motion.li>
                 ))}
               </ul>
             )}
-          </section>
+          </motion.section>
         )}
 
         {tab === "settings" && (
-          <section aria-label="Voice settings" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-            {/* Feature 1: language selection */}
+          <motion.section
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3 }}
+            aria-label="Voice settings"
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 20,
+              background: "rgba(30, 41, 59, 0.55)",
+              backdropFilter: "blur(20px) saturate(150%)",
+              WebkitBackdropFilter: "blur(20px) saturate(150%)",
+              border: `1px solid ${COLORS.borderGlass}`,
+              borderRadius: RADIUS.lg,
+              padding: 22,
+              boxShadow: SHADOW.md,
+            }}
+          >
+            {/* Language selection */}
             <div>
-              <label htmlFor="language-select" style={{ fontSize: 16, fontWeight: 700, display: "block", marginBottom: 8 }}>
-                Language
+              <label htmlFor="language-select" style={{ fontSize: 16, fontWeight: 700, display: "flex", alignItems: "center", gap: 7, marginBottom: 8 }}>
+                <Languages size={17} aria-hidden="true" /> Language
               </label>
               <select
                 id="language-select"
                 value={language}
                 onChange={(e) => handleLanguageChange(e.target.value)}
-                style={{
-                  width: "100%",
-                  minHeight: 48,
-                  background: COLORS.card,
-                  color: COLORS.text,
-                  border: `1px solid ${COLORS.border}`,
-                  borderRadius: 12,
-                  padding: "10px 12px",
-                  fontSize: 16,
-                  fontFamily: FONT,
-                }}
+                style={selectStyle}
               >
                 {LANGUAGES.map((l) => (
                   <option key={l.code} value={l.code}>
@@ -557,17 +611,7 @@ export default function UserDashboard() {
                 id="voice-select"
                 value={voiceSettings.voiceURI ?? ""}
                 onChange={(e) => updateSettings({ voiceURI: e.target.value || null })}
-                style={{
-                  width: "100%",
-                  minHeight: 48,
-                  background: COLORS.card,
-                  color: COLORS.text,
-                  border: `1px solid ${COLORS.border}`,
-                  borderRadius: 12,
-                  padding: "10px 12px",
-                  fontSize: 16,
-                  fontFamily: FONT,
-                }}
+                style={selectStyle}
               >
                 <option value="">System default</option>
                 {voices.map((v) => (
@@ -590,7 +634,7 @@ export default function UserDashboard() {
                 step={0.05}
                 value={voiceSettings.rate}
                 onChange={(e) => updateSettings({ rate: Number(e.target.value) })}
-                style={{ width: "100%", accentColor: COLORS.accent, minHeight: 48 }}
+                style={{ width: "100%", accentColor: COLORS.accent, minHeight: TAP_MIN }}
               />
             </div>
 
@@ -606,7 +650,7 @@ export default function UserDashboard() {
                 step={0.05}
                 value={voiceSettings.pitch}
                 onChange={(e) => updateSettings({ pitch: Number(e.target.value) })}
-                style={{ width: "100%", accentColor: COLORS.accent, minHeight: 48 }}
+                style={{ width: "100%", accentColor: COLORS.accent, minHeight: TAP_MIN }}
               />
             </div>
 
@@ -615,21 +659,22 @@ export default function UserDashboard() {
               onClick={() =>
                 setTranslatedText(speakSentence("I need water") ?? "")
               }
+              className="btn-ghost"
               style={{
-                minHeight: 48,
-                background: COLORS.accentSoft,
-                color: COLORS.accent,
-                border: `2px solid ${COLORS.accent}`,
-                borderRadius: 12,
+                minHeight: TAP_MIN,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
                 fontSize: 17,
-                fontWeight: 700,
-                cursor: "pointer",
+                color: COLORS.accentBright,
+                borderColor: "rgba(0, 180, 216, 0.5)",
                 fontFamily: FONT,
               }}
             >
-              🔊 Test voice
+              <Volume2 size={18} aria-hidden="true" /> Test voice
             </button>
-          </section>
+          </motion.section>
         )}
       </main>
 
@@ -647,14 +692,14 @@ export default function UserDashboard() {
           width: 76,
           height: 76,
           borderRadius: "50%",
-          background: COLORS.danger,
+          background: `radial-gradient(circle at 30% 30%, #F87171, ${COLORS.danger})`,
           color: "#fff",
           border: "3px solid rgba(255,255,255,0.25)",
           fontSize: 15,
           fontWeight: 800,
           letterSpacing: 0.5,
           cursor: "pointer",
-          boxShadow: "0 8px 30px rgba(239, 68, 68, 0.45)",
+          boxShadow: SHADOW.dangerGlow,
           zIndex: 50,
           fontFamily: FONT,
         }}
@@ -676,9 +721,11 @@ export default function UserDashboard() {
               left: "50%",
               bottom: 110,
               transform: "translateX(-50%)",
-              background: COLORS.success,
+              background: "rgba(16, 185, 129, 0.92)",
+              backdropFilter: "blur(12px)",
+              WebkitBackdropFilter: "blur(12px)",
               color: "#04291B",
-              borderRadius: 999,
+              borderRadius: RADIUS.pill,
               padding: "12px 22px",
               fontSize: 17,
               fontWeight: 800,
@@ -691,6 +738,16 @@ export default function UserDashboard() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Screen-reader-only stop control parity */}
+      <button
+        type="button"
+        onClick={stopSpeaking}
+        aria-label="Stop speaking"
+        className="sr-only"
+      >
+        <X size={1} aria-hidden="true" />
+      </button>
     </div>
   )
 }

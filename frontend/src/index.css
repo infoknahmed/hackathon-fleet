@@ -9,16 +9,185 @@ html {
 }
 
 body {
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
-    Arial, sans-serif;
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
   background: #0a1929;
   color: #f1f5f9;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  overscroll-behavior-y: none;
 }
 
-button {
+button,
+input,
+select,
+textarea {
   font-family: inherit;
+}
+
+/* ---- Ambient aurora backdrop (fixed, behind everything) ---- */
+.aurora-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  background: #0a1929;
+}
+.aurora-backdrop::before,
+.aurora-backdrop::after {
+  content: "";
+  position: absolute;
+  width: 60vmax;
+  height: 60vmax;
+  border-radius: 50%;
+  filter: blur(90px);
+  opacity: 0.16;
+}
+.aurora-backdrop::before {
+  background: #00b4d8;
+  top: -20vmax;
+  right: -15vmax;
+  animation: aurora-a 26s ease-in-out infinite alternate;
+}
+.aurora-backdrop::after {
+  background: #7c3aed;
+  bottom: -25vmax;
+  left: -18vmax;
+  animation: aurora-b 32s ease-in-out infinite alternate;
+}
+@keyframes aurora-a {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to { transform: translate3d(-8vmax, 6vmax, 0) scale(1.15); }
+}
+@keyframes aurora-b {
+  from { transform: translate3d(0, 0, 0) scale(1.1); }
+  to { transform: translate3d(10vmax, -8vmax, 0) scale(0.95); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aurora-backdrop::before,
+  .aurora-backdrop::after {
+    animation: none;
+  }
+}
+
+/* ---- Glassmorphism utilities ---- */
+.glass {
+  background: rgba(30, 41, 59, 0.55);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  backdrop-filter: blur(20px) saturate(150%);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 16px;
+  box-shadow:
+    0 8px 32px rgba(2, 8, 20, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.glass-strong {
+  background: rgba(23, 34, 51, 0.78);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  backdrop-filter: blur(20px) saturate(160%);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 16px;
+  box-shadow:
+    0 12px 40px rgba(2, 8, 20, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* Hover lift + brighter border for glass cards */
+.glass-hover {
+  transition:
+    transform 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.22s ease,
+    box-shadow 0.22s ease,
+    background 0.22s ease;
+}
+.glass-hover:hover {
+  transform: translateY(-2px);
+  border-color: rgba(0, 180, 216, 0.55);
+  box-shadow:
+    0 14px 40px rgba(2, 8, 20, 0.5),
+    0 0 0 1px rgba(0, 180, 216, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+/* Gradient primary button (teal) */
+.btn-gradient {
+  background: linear-gradient(135deg, #22d3ee 0%, #00b4d8 45%, #0891b2 100%);
+  color: #04121f;
+  border: none;
+  border-radius: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow:
+    0 8px 24px rgba(0, 180, 216, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  transition:
+    transform 0.18s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.18s ease,
+    filter 0.18s ease;
+}
+.btn-gradient:hover:not(:disabled) {
+  transform: translateY(-2px);
+  filter: brightness(1.07);
+  box-shadow:
+    0 12px 32px rgba(0, 180, 216, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+.btn-gradient:active:not(:disabled) {
+  transform: translateY(0);
+}
+.btn-gradient:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Ghost secondary button */
+.btn-ghost {
+  background: rgba(148, 163, 184, 0.08);
+  color: #cbd5e1;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    transform 0.18s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.18s ease,
+    color 0.18s ease,
+    background 0.18s ease;
+}
+.btn-ghost:hover:not(:disabled) {
+  transform: translateY(-2px);
+  border-color: rgba(0, 180, 216, 0.6);
+  color: #f1f5f9;
+  background: rgba(0, 180, 216, 0.1);
+}
+.btn-ghost:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Thin styled scrollbar */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.25);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 180, 216, 0.45);
+  border: 2px solid transparent;
+  background-clip: content-box;
 }
 
 /* Visible focus ring for keyboard navigation (a11y) */
