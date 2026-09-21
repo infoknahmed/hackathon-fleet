@@ -1,0 +1,53 @@
+Read `tasks/frontend-task.md` and implement everything specified in it.
+
+Build the frontend in the ./frontend directory:
+- Create ./frontend with all necessary files
+- Create a `.gitignore` file inside ./frontend to ignore node_modules/ and build outputs
+- Create dependency manifest (e.g. package.json) and install dependencies
+- Run npm run build at the end to verify it compiles
+- Add a `"test": "echo 'no tests yet' && exit 0"` script
+
+Target Tech Stack Specification:
+- Framework: React 18.x
+- Build Tool: Vite 5.x
+- UI / Icon Library: lucide-react 0.469.x
+
+UI & Design Aesthetics Guidelines (CRITICAL FOR QUALITY):
+1. **Modern Dark Theme UI**: Use a polished dark color palette (`#0f172a` / `#1e293b`), smooth gradient headers, glassmorphism cards, rounded borders (`rounded-xl`), and crisp accent colors.
+2. **Lucide Icons Everywhere**: Use `lucide-react` icons for every action button, navigation tab, status badge, and input label.
+3. **Multi-View Layout**: Include a top Header/Navbar with branding, tab navigation (e.g. Dashboard, Management, Analytics), Search & Filter bar, and quick-action "+ Add New" modal trigger button.
+4. **Rich State Handling**: Always render loading skeletons/spinners during API calls, user-friendly empty states with action triggers, toast notifications for actions, and modal forms for adding/editing items.
+5. **Instant Demo Seed Fallback**: If the API backend returns an empty list, populate the UI with 5+ realistic sample seed items so the app looks alive and fully functional on first load.
+
+Configure API proxy so `/api` requests forward to http://localhost:3001.
+
+
+
+Do NOT touch backend code or root integration. Only build files inside ./frontend.Read `tasks/frontend-task.md` and implement everything specified in it.
+
+Build the frontend in the ./frontend directory:
+- Create ./frontend with all necessary files
+- Create a `.gitignore` file inside ./frontend to ignore node_modules/ and build outputs
+- Create dependency manifest (e.g. package.json) and install dependencies
+- Run npm run build at the end to verify it compiles
+- Add a `"test": "echo 'no tests yet' && exit 0"` script
+
+Target Tech Stack Specification:
+- Framework: React 18.x
+- Build Tool: Vite 5.x
+- UI / Icon Library: lucide-react 0.469.x
+
+UI & Design Aesthetics Guidelines (CRITICAL FOR QUALITY):
+1. **Modern Dark Theme UI**: Use a polished dark color palette (`#0f172a` / `#1e293b`), smooth gradient headers, glassmorphism cards, rounded borders (`rounded-xl`), and crisp accent colors.
+2. **Lucide Icons Everywhere**: Use `lucide-react` icons for every action button, navigation tab, status badge, and input label.
+3. **Multi-View Layout**: Include a top Header/Navbar with branding, tab navigation (e.g. Dashboard, Management, Analytics), Search & Filter bar, and quick-action "+ Add New" modal trigger button.
+4. **Rich State Handling**: Always render loading skeletons/spinners during API calls, user-friendly empty states with action triggers, toast notifications for actions, and modal forms for adding/editing items.
+5. **Instant Demo Seed Fallback**: If the API backend returns an empty list, populate the UI with 5+ realistic sample seed items so the app looks alive and fully functional on first load.
+
+Configure API proxy so `/api` requests forward to http://localhost:3001.
+
+
+
+Do NOT touch backend code or root integration. Only build files inside ./frontend.
+
+The previous build (failed: build) had validation errors. Read the build output and fix ALL issues. Do not rewrite working code. Only fix the reported problems.
