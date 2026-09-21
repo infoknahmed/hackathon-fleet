@@ -80,3 +80,12 @@
 {"timestamp": 1789971850.9924493, "event": "log_message", "level": "INFO", "message": "Builder: frontend=OK, backend=OK"}
 {"timestamp": 1789971850.9937434, "event": "log_message", "level": "INFO", "message": "Integration: root package.json created"}
 {"timestamp": 1789971851.3866012, "event": "builder_complete", "level": "INFO", "tag": "repair", "success": true}
+{"timestamp": 1789971851.761742, "event": "validation_start", "level": "INFO"}
+{"timestamp": 1789971851.7637756, "event": "log_message", "level": "INFO", "message": "============================================================"}
+{"timestamp": 1789971851.7653015, "event": "log_message", "level": "INFO", "message": "PHASE 3/3: VALIDATION \u2014 Running build, lint, tests"}
+{"timestamp": 1789971851.7666147, "event": "log_message", "level": "INFO", "message": "============================================================"}
+{"timestamp": 1789971851.768076, "event": "log_message", "level": "INFO", "message": "Running validation..."}
+{"timestamp": 1789971853.2375298, "event": "log_message", "level": "INFO", "message": "Build: FAILED"}
+{"timestamp": 1789971853.254464, "event": "log_message", "level": "INFO", "message": "[FAIL] Validation: FAILED (build)"}
+{"timestamp": 1789971853.255826, "event": "validation_complete", "level": "INFO", "passed": false}
+{"timestamp": 1789971853.2575076, "event": "log_message", "level": "INFO", "message": "[FAIL] Repair: Validation still failing on attempt 2."}
