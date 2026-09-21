@@ -1,0 +1,14 @@
+{
+  "$schema": "https://hackit.ai/config.json",
+  "permission": {
+    "edit": "allow",
+    "bash": "allow",
+    "external_directory": "deny",
+    "webfetch": "deny",
+    "skill": "deny",
+    "read": "allow",
+    "glob": "allow",
+    "grep": "allow",
+    "list": "allow"
+  }
+}

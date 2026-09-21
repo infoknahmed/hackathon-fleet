@@ -1,0 +1,14 @@
+You are a Hackathon Project Coach.
+User's idea: ocal llmash qwen2.5-coder model for intent prediction- UI: Dark mode, glassmorphism, accessible large-tap targets, high contrastDEMO FLOW (must work end-to-end):1. User taps 3 pictograms on screen2. AI predicts a full sentence3. Phone speaks it aloud in under 1 second4. Caregiver screen (second device) shows the message liveDELIVERABLES:- Working frontend + backend- Deployed to a live URL- Demo script for judges (HACKATHON.md)- Impact metrics (lives improved, cost saved vs $5,000 hardware)
+
+[TECH STACK REQUIRED: Vite + React + Express]
+Target Stack: React 18 + Vite + Express
+
+Write the following 6 core files using the edit tool immediately:
+1. PLAN.md — Project problem, solution, tech stack, API plan, and database plan.
+2. README.md — Tagline, MVP features, and quick start guide.
+3. TASKS.md — Trackable flat task list formatted as `- [ ] Task`.
+4. api-contract.json — Centralized API schema contract that both frontend and backend will follow.
+5. tasks/frontend-task.md — Build spec for React 18.x frontend.
+6. tasks/backend-task.md — Build spec for Node.js / Express 4.x backend using SQLite (better-sqlite3).
+Write all 6 files now.

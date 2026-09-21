@@ -1,0 +1,23 @@
+{
+  "id": "default",
+  "name": "React 18 + Vite + Express",
+  "description": "Standard React 18 frontend with Vite and Node.js Express backend using SQLite.",
+  "frontend": {
+    "framework": "React 18.x",
+    "build_tool": "Vite 5.x",
+    "icons": "lucide-react 0.469.x",
+    "dir": "./frontend",
+    "build_script": "npm run build",
+    "test_script": "echo 'no tests yet' && exit 0"
+  },
+  "backend": {
+    "framework": "Node.js / Express 4.x",
+    "database": "SQLite (better-sqlite3)",
+    "dir": "./backend",
+    "port_env": "PORT_BACKEND",
+    "build_script": "node --check server.js",
+    "test_script": "echo 'no tests yet' && exit 0"
+  },
+  "custom_instructions": "",
+  "base_template_dir": ""
+}
