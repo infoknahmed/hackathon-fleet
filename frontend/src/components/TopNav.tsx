@@ -1,15 +1,60 @@
 import type { ReactNode } from "react"
+import { useEffect, useState } from "react"
 import { Link, useLocation } from "react-router-dom"
 import { motion } from "motion/react"
-import { Home, MessagesSquare, HeartHandshake, BarChart3 } from "lucide-react"
+import { Home, MessagesSquare, Hand, HeartHandshake, BarChart3 } from "lucide-react"
 import { COLORS, FONT, RADIUS, SHADOW, TAP_MIN } from "../theme"
 
 const LINKS = [
   { to: "/user", label: "User", icon: Home },
   { to: "/conversation", label: "Conversation", icon: MessagesSquare },
+  { to: "/sign", label: "Sign", icon: Hand },
   { to: "/guardian", label: "Guardian", icon: HeartHandshake },
   { to: "/admin", label: "Admin", icon: BarChart3 },
 ]
+
+/** Online/offline indicator — green dot when online, yellow when offline. */
+function ConnectivityDot() {
+  const [online, setOnline] = useState(() => navigator.onLine)
+
+  useEffect(() => {
+    const goOnline = () => setOnline(true)
+    const goOffline = () => setOnline(false)
+    window.addEventListener("online", goOnline)
+    window.addEventListener("offline", goOffline)
+    return () => {
+      window.removeEventListener("online", goOnline)
+      window.removeEventListener("offline", goOffline)
+    }
+  }, [])
+
+  return (
+    <span
+      role="status"
+      aria-label={online ? "Online" : "Offline mode"}
+      title={online ? "Online" : "Offline mode"}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: 34,
+        height: 34,
+        borderRadius: "50%",
+      }}
+    >
+      <motion.span
+        animate={{
+          backgroundColor: online ? "#10B981" : "#F59E0B",
+          boxShadow: online
+            ? "0 0 10px rgba(16, 185, 129, 0.7)"
+            : "0 0 10px rgba(245, 158, 11, 0.7)",
+        }}
+        transition={{ duration: 0.3 }}
+        style={{ width: 12, height: 12, borderRadius: "50%" }}
+      />
+    </span>
+  )
+}
 
 interface Props {
   /** Right-aligned content (status pills, buttons, etc.). */
@@ -132,6 +177,7 @@ export function TopNav({ right }: Props) {
         }}
       >
         {right}
+        <ConnectivityDot />
       </div>
     </motion.header>
   )

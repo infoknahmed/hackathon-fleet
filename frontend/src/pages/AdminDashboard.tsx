@@ -75,7 +75,7 @@ export default function AdminDashboard() {
   const moodData = useMemo(() => {
     const counts = new Map<string, number>()
     for (const m of messages) {
-      if (m.type === "reply") continue
+      if (m.type === "reply" || m.type === "sign") continue
       counts.set(m.mood, (counts.get(m.mood) ?? 0) + 1)
     }
     return [...counts.entries()].map(([name, value]) => ({ name, value }))

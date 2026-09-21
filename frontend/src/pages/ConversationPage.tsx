@@ -14,6 +14,7 @@ import { PictogramGrid } from "../components/PictogramGrid"
 import type { Pictogram } from "../components/PictogramGrid"
 import { MessageCard } from "../components/MessageCard"
 import type { ChatMessage } from "../components/MessageCard"
+import { SignAvatar } from "../components/SignAvatar"
 import { predictSentence } from "../lib/predict"
 import {
   speak,
@@ -48,6 +49,20 @@ const SIGNS: Record<string, string> = {
   help: "🆘",
   family: "👨‍👩‍👧",
   more: "➕",
+}
+
+/** Mic-meter tuning (noise handling). */
+const NOISE_LEVEL = 0.5
+const NOISE_TRIGGER_MS = 2000
+const NOISE_FADE_MS = 3000
+/** Activation thresholds for the 5 level bars. */
+const BAR_STEPS = [0.06, 0.22, 0.4, 0.58, 0.78]
+
+/** ASR confidence badge color (>0.8 green, 0.5–0.8 yellow, <0.5 red). */
+function asrConfColor(confidence: number): string {
+  if (confidence > 0.8) return COLORS.success
+  if (confidence >= 0.5) return COLORS.warning
+  return COLORS.danger
 }
 
 type RecognitionEvent = {
@@ -104,10 +119,22 @@ export default function ConversationPage() {
   const [listening, setListening] = useState(false)
   const [speechSupported] = useState(() => getRecognitionCtor() !== null)
   const [error, setError] = useState<string | null>(null)
-  const [signPopup, setSignPopup] = useState<{ signs: string; text: string } | null>(null)
+  const [signPopup, setSignPopup] = useState<{ text: string } | null>(null)
+  const [speechConfidence, setSpeechConfidence] = useState<number | null>(null)
+  // Mic metering (noise handling)
+  const [micLevel, setMicLevel] = useState(0)
+  const [noisy, setNoisy] = useState(false)
+  // ASR confidence + low-confidence correction
+  const [suggestion, setSuggestion] = useState<string | null>(null)
 
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null)
   const shouldListenRef = useRef(false)
+  const meterStreamRef = useRef<MediaStream | null>(null)
+  const meterCtxRef = useRef<AudioContext | null>(null)
+  const meterRafRef = useRef(0)
+  const loudSinceRef = useRef<number | null>(null)
+  const quietSinceRef = useRef<number | null>(null)
+  const noisyShownAtRef = useRef<number | null>(null)
   const chatEndRefLeft = useRef<HTMLDivElement | null>(null)
   const chatEndRefRight = useRef<HTMLDivElement | null>(null)
 
@@ -126,11 +153,12 @@ export default function ConversationPage() {
     chatEndRefRight.current?.scrollIntoView({ behavior: "smooth", block: "end" })
   }, [messages])
 
-  // Cleanup recognition on unmount.
+  // Cleanup recognition + mic meter on unmount.
   useEffect(() => {
     return () => {
       shouldListenRef.current = false
       recognitionRef.current?.abort()
+      stopMicMeter()
     }
   }, [])
 
@@ -138,11 +166,89 @@ export default function ConversationPage() {
     setMessages((prev) => [...prev, msg])
   }, [])
 
-  /** Show the sign avatar popup on the LEFT panel (incoming voice messages). */
-  const showSigns = useCallback((text: string, signs: string) => {
-    setSignPopup({ signs, text })
-    window.setTimeout(() => setSignPopup(null), 6000)
+  /* ── Mic level meter: AudioContext + AnalyserNode → 5 bars + noise alert ── */
+  const stopMicMeter = useCallback(() => {
+    cancelAnimationFrame(meterRafRef.current)
+    meterRafRef.current = 0
+    setMicLevel(0)
+    loudSinceRef.current = null
+    quietSinceRef.current = null
+    noisyShownAtRef.current = null
+    setNoisy(false)
+    meterStreamRef.current?.getTracks().forEach((t) => t.stop())
+    meterStreamRef.current = null
+    void meterCtxRef.current?.close().catch(() => undefined)
+    meterCtxRef.current = null
   }, [])
+
+  const startMicMeter = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      meterStreamRef.current = stream
+      const Ctor =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+      if (!Ctor) return
+      const ctx = new Ctor()
+      meterCtxRef.current = ctx
+      const analyser = ctx.createAnalyser()
+      analyser.fftSize = 1024
+      ctx.createMediaStreamSource(stream).connect(analyser)
+      const buf = new Uint8Array(analyser.fftSize)
+
+      const loop = () => {
+        analyser.getByteTimeDomainData(buf)
+        let peak = 0
+        for (let i = 0; i < buf.length; i++) {
+          const dev = Math.abs(buf[i] - 128)
+          if (dev > peak) peak = dev
+        }
+        const level = Math.min(1, peak / 128)
+        setMicLevel(level)
+
+        // Noise gating: very loud for >2s → warn; fade 3s after it quietens.
+        const now = performance.now()
+        if (level > NOISE_LEVEL) {
+          quietSinceRef.current = null
+          if (loudSinceRef.current === null) {
+            loudSinceRef.current = now
+          } else if (
+            now - loudSinceRef.current > NOISE_TRIGGER_MS &&
+            noisyShownAtRef.current === null
+          ) {
+            noisyShownAtRef.current = now
+            setNoisy(true)
+          }
+        } else {
+          loudSinceRef.current = null
+          if (quietSinceRef.current === null) quietSinceRef.current = now
+          if (
+            noisyShownAtRef.current !== null &&
+            now - quietSinceRef.current > NOISE_FADE_MS
+          ) {
+            noisyShownAtRef.current = null
+            quietSinceRef.current = null
+            setNoisy(false)
+          }
+        }
+        meterRafRef.current = requestAnimationFrame(loop)
+      }
+      loop()
+    } catch {
+      /* metering is best-effort */
+    }
+  }, [])
+
+  /** Show the sign avatar popup on the LEFT panel (incoming voice messages). */
+  const showSigns = useCallback((text: string) => {
+    setSignPopup({ text })
+    // Safety close — the avatar normally closes it via onComplete.
+    window.setTimeout(() => {
+      setSignPopup((cur) => (cur?.text === text ? null : cur))
+    }, 15000)
+  }, [])
+
+  const closeSignPopup = useCallback(() => setSignPopup(null), [])
 
   /** LEFT → TTS on the RIGHT side (spoken in the selected language). */
   const speakForRight = useCallback(
@@ -164,7 +270,7 @@ export default function ConversationPage() {
   /** RIGHT → sign avatar on the LEFT side. */
   const deliverToLeft = useCallback(
     (englishText: string, displayText: string) => {
-      showSigns(englishText, signForSentence(englishText))
+      showSigns(englishText)
       pushMessage({
         id: `r-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         side: "right",
@@ -218,6 +324,8 @@ export default function ConversationPage() {
     const Ctor = getRecognitionCtor()
     if (!Ctor || listening) return
     setError(null)
+    setSuggestion(null)
+    setSpeechConfidence(null)
     stopSpeaking()
 
     const recognition = new Ctor()
@@ -227,13 +335,19 @@ export default function ConversationPage() {
     recognition.maxAlternatives = 1
 
     let finalTranscript = ""
+    let finalConfidence: number | undefined = undefined
     recognition.onresult = (e) => {
       let interim = ""
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const res = e.results[i]
-        const transcript = res[0]?.transcript ?? ""
+        const alt = res[0] as { transcript?: string; confidence?: number } | undefined
+        const transcript = alt?.transcript ?? ""
         if (res.isFinal) {
           finalTranscript += transcript
+          if (typeof alt?.confidence === "number" && alt.confidence > 0) {
+            finalConfidence = alt.confidence
+            setSpeechConfidence(alt.confidence)
+          }
         } else {
           interim += transcript
         }
@@ -243,14 +357,18 @@ export default function ConversationPage() {
     recognition.onend = () => {
       setListening(false)
       shouldListenRef.current = false
+      stopMicMeter()
       const text = finalTranscript.trim()
       if (text) {
         deliverToLeft(text, text)
+        // Low ASR confidence → offer a correction ("Did you mean?").
+        setSuggestion(finalConfidence !== undefined && finalConfidence < 0.5 ? text : null)
       }
     }
     recognition.onerror = (e) => {
       setListening(false)
       shouldListenRef.current = false
+      stopMicMeter()
       if (e.error !== "aborted" && e.error !== "no-speech") {
         setError(`Mic error: ${e.error}`)
       }
@@ -261,10 +379,20 @@ export default function ConversationPage() {
     try {
       recognition.start()
       setListening(true)
+      void startMicMeter()
     } catch {
       setError("Could not start the microphone.")
       setListening(false)
+      stopMicMeter()
     }
+  }
+
+  /** Send the corrected transcript from the "Did you mean?" input. */
+  const handleSendSuggestion = () => {
+    const text = (suggestion ?? "").trim()
+    if (!text) return
+    deliverToLeft(text, text)
+    setSuggestion(null)
   }
 
   const stopListening = () => {
@@ -433,20 +561,14 @@ export default function ConversationPage() {
                     padding: 12,
                     background:
                       "radial-gradient(circle at 50% 30%, rgba(124, 58, 237, 0.16), rgba(10, 25, 41, 0.4))",
+                    overflow: "hidden",
                   }}
                 >
-                  <div
-                    style={{
-                      fontSize: 44,
-                      letterSpacing: 6,
-                      lineHeight: 1.2,
-                      textAlign: "center",
-                      filter: "drop-shadow(0 4px 14px rgba(124,58,237,0.45))",
-                    }}
-                    aria-hidden="true"
-                  >
-                    {signPopup.signs}
-                  </div>
+                  <SignAvatar
+                    text={signPopup.text}
+                    onComplete={closeSignPopup}
+                    size={110}
+                  />
                   <p style={{ margin: 0, fontSize: 15, fontWeight: 700, textAlign: "center" }}>
                     “{signPopup.text}”
                   </p>
@@ -668,9 +790,10 @@ export default function ConversationPage() {
               </select>
             </div>
 
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              {/* Hold-to-record mic */}
-              <motion.button
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+                {/* Hold-to-record mic */}
+                <motion.button
                 type="button"
                 onPointerDown={(e) => {
                   e.preventDefault()
@@ -724,12 +847,48 @@ export default function ConversationPage() {
                 )}
               </motion.button>
 
+                {/* Mic level bars (5) — live input amplitude */}
+                <div
+                  aria-hidden="true"
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-end",
+                    gap: 3,
+                    height: 40,
+                    flexShrink: 0,
+                  }}
+                >
+                  {BAR_STEPS.map((step, i) => {
+                    const active = listening && micLevel >= step
+                    return (
+                      <motion.span
+                        key={i}
+                        animate={{
+                          height: active ? 12 + i * 6 : 8,
+                          backgroundColor: active ? COLORS.accentBright : "rgba(148, 163, 184, 0.3)",
+                        }}
+                        transition={{ duration: 0.12 }}
+                        style={{
+                          width: 6,
+                          borderRadius: 3,
+                          display: "inline-block",
+                        }}
+                      />
+                    )
+                  })}
+                </div>
+              </div>
+
               <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
                 <div
                   role="status"
                   aria-live="polite"
                   style={{
                     minHeight: 22,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    flexWrap: "wrap",
                     fontSize: 13.5,
                     fontWeight: 700,
                     color: listening ? COLORS.danger : COLORS.textDim,
@@ -740,7 +899,106 @@ export default function ConversationPage() {
                     : speechSupported
                       ? "Hold the mic to record"
                       : "Speech recognition not supported in this browser — use text input"}
+                  {speechConfidence != null && !listening && (
+                    <span
+                      aria-label={`Speech confidence ${Math.round(speechConfidence * 100)} percent`}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        fontSize: 11,
+                        fontWeight: 800,
+                        color: asrConfColor(speechConfidence),
+                        background:
+                          speechConfidence > 0.8
+                            ? COLORS.successSoft
+                            : speechConfidence >= 0.5
+                              ? "rgba(250, 204, 21, 0.14)"
+                              : COLORS.dangerSoft,
+                        border: `1px solid ${asrConfColor(speechConfidence)}`,
+                        borderRadius: RADIUS.pill,
+                        padding: "1px 8px",
+                        fontVariantNumeric: "tabular-nums",
+                      }}
+                    >
+                      {Math.round(speechConfidence * 100)}% confidence
+                    </span>
+                  )}
                 </div>
+
+                {/* Noise warning (auto-fades) */}
+                <AnimatePresence>
+                  {noisy && (
+                    <motion.p
+                      initial={{ opacity: 0, y: -4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.3 }}
+                      role="alert"
+                      style={{
+                        margin: 0,
+                        fontSize: 13,
+                        fontWeight: 800,
+                        color: COLORS.warning,
+                      }}
+                    >
+                      🔊 Too noisy — try a quieter place
+                    </motion.p>
+                  )}
+                </AnimatePresence>
+
+                {/* Low-confidence correction */}
+                <AnimatePresence>
+                  {suggestion !== null && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.25 }}
+                      style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}
+                    >
+                      <span style={{ fontSize: 13, fontWeight: 800, color: COLORS.warning }}>
+                        Did you mean?
+                      </span>
+                      <input
+                        type="text"
+                        value={suggestion}
+                        onChange={(e) => setSuggestion(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleSendSuggestion()
+                        }}
+                        aria-label="Corrected transcript"
+                        style={{
+                          flex: 1,
+                          minWidth: 140,
+                          minHeight: 40,
+                          background: "rgba(10, 25, 41, 0.6)",
+                          color: COLORS.text,
+                          border: `1px solid rgba(250, 204, 21, 0.5)`,
+                          borderRadius: RADIUS.md,
+                          padding: "8px 12px",
+                          fontSize: 14,
+                          fontFamily: FONT,
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={handleSendSuggestion}
+                        className="btn-ghost"
+                        style={{
+                          minHeight: TAP_MIN,
+                          padding: "0 14px",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          fontSize: 14,
+                          fontFamily: FONT,
+                        }}
+                      >
+                        <Send size={15} strokeWidth={2.5} aria-hidden="true" />
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
                 <div style={{ display: "flex", gap: 8 }}>
                   <input
                     type="text"
@@ -795,15 +1053,4 @@ export default function ConversationPage() {
       </main>
     </div>
   )
-}
-
-/** Map an English sentence to a simple sign sequence (word-key lookup). */
-function signForSentence(text: string): string {
-  const words = text.toLowerCase().replace(/[^a-z\s]/g, " ").split(/\s+/).filter(Boolean)
-  const signs: string[] = []
-  for (const w of words) {
-    if (SIGNS[w]) signs.push(SIGNS[w])
-  }
-  if (signs.length === 0) return "🤟"
-  return signs.join(" ")
 }

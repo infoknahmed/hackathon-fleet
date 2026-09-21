@@ -1,23 +1,20 @@
-/**
- * Cross-tab message bus for VaakSetu.
- * BroadcastChannel works across browser tabs/windows on the same machine —
- * perfect for the live demo (user tab → guardian/admin tabs).
- *
- * Posts are also delivered to local subscribers, so the sending tab (e.g. the
- * scripted demo running inside the Guardian tab) sees its own messages.
- */
+// Cross-device message bus for VaakSetu.
+// Powered by Socket.IO — works across ALL devices connected to the same backend.
 
-interface BaseMessage {
-  /** Optional stable id; receivers synthesize one when missing. */
+import { io, Socket } from 'socket.io-client'
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001'
+
+/** Base fields every message carries. */
+export interface BaseMessage {
   id?: string
-  timestamp: number
-  /** ms between send and receive, set on the receiving side */
   latencyMs?: number
+  timestamp: number
 }
 
 /** A sentence spoken by the user (pictogram pick or SOS). */
 export interface DataMessage extends BaseMessage {
-  type: "message"
+  type: 'message'
   text: string
   pictograms: { id: string; label: string; emoji: string }[]
   /** 0–100 */
@@ -28,57 +25,231 @@ export interface DataMessage extends BaseMessage {
 
 /** A guardian's answer, delivered back to the user dashboard. */
 export interface ReplyMessage extends BaseMessage {
-  type: "reply"
+  type: 'reply'
   text: string
 }
 
 /** A standalone mood update. */
 export interface MoodMessage extends BaseMessage {
-  type: "mood"
+  type: 'mood'
   mood: string
 }
 
-export type VaakSetuMessage = DataMessage | ReplyMessage | MoodMessage
-
-const CHANNEL_NAME = "vaaksetu-messages"
-
-const channel: BroadcastChannel | null =
-  typeof BroadcastChannel !== "undefined" ? new BroadcastChannel(CHANNEL_NAME) : null
-
-const localListeners = new Set<(msg: VaakSetuMessage) => void>()
-
-export function sendMessage(msg: VaakSetuMessage): void {
-  // Local echo first (same-tab subscribers), then broadcast to other tabs.
-  for (const listener of localListeners) listener(msg)
-  channel?.postMessage(msg)
+/** A sign-language gesture sent from the /sign page. */
+export interface SignMessage extends BaseMessage {
+  type: 'sign'
+  text: string
+  confidence?: number
 }
 
-export function subscribeToMessages(
-  callback: (msg: VaakSetuMessage) => void,
-): () => void {
-  localListeners.add(callback)
+/** Anything the app can put on the bus. */
+export type VaakSetuMessage = DataMessage | ReplyMessage | MoodMessage | SignMessage
 
-  if (!channel) {
-    console.warn("[VaakSetu] BroadcastChannel not supported in this browser.")
-    return () => {
-      localListeners.delete(callback)
-    }
+const SOCKET_EVENTS = {
+  SEND: 'message:send',
+  NEW: 'message:new',
+  HISTORY: 'messages:history'
+} as const
+
+/**
+ * The backend (backend/server.js) rebuilds every incoming payload through
+ * makeMessage(), which only keeps role/content/confidence/lang/emergency.
+ * We smuggle the richer client shape through `role` and `content` so the
+ * original type survives the round-trip and every dashboard keeps working.
+ */
+interface WireShape {
+  role: string
+  content: string
+  confidence: number
+  emergency: boolean
+  lang?: string
+  [key: string]: unknown
+}
+
+/** Serializes a typed app message into the backend's wire shape. */
+function toWire(msg: VaakSetuMessage): WireShape {
+  const base: WireShape = {
+    role: msg.type, // smuggled discriminator (backend passes it through)
+    content: msg.type === 'mood' ? msg.mood : msg.text,
+    confidence:
+      msg.type === 'message'
+        ? msg.confidence
+        : msg.type === 'sign'
+          ? msg.confidence ?? 95
+          : 100,
+    emergency: msg.type === 'message' ? Boolean(msg.emergency) : false,
   }
+  if (msg.type === 'message') {
+    base.pictograms = msg.pictograms
+    base.mood = msg.mood
+  }
+  if (msg.type === 'mood') base.mood = msg.mood
+  return base
+}
 
-  const handler = (event: MessageEvent) => callback(event.data as VaakSetuMessage)
-  channel.addEventListener("message", handler)
+/**
+ * Rebuilds a typed app message from what the backend echoes back.
+ * Accepts both the backend's makeMessage shape and plain client payloads.
+ */
+function fromWire(raw: unknown): VaakSetuMessage | null {
+  if (!raw || typeof raw !== 'object') return null
+  const m = raw as Record<string, unknown>
+
+  const numericTs = toNumber(m.timestamp)
+  // Backend stamps timestamps as ISO strings — parse them.
+  const ts =
+    numericTs ??
+    (typeof m.timestamp === 'string' && m.timestamp
+      ? Date.parse(m.timestamp) || Date.now()
+      : Date.now())
+  const id = typeof m.id === 'string' && m.id ? m.id : undefined
+
+  // Messages sent through toWire() carry the real type in `role`.
+  const type = typeof m.role === 'string' && m.role !== 'user' ? m.role : m.type
+  const text =
+    typeof m.content === 'string' && m.content
+      ? m.content
+      : typeof m.text === 'string'
+        ? m.text
+        : ''
+  const confidence = toNumber(m.confidence) ?? 90
+
+  switch (type) {
+    case 'message':
+      return {
+        type: 'message',
+        id,
+        timestamp: ts,
+        text,
+        pictograms: Array.isArray(m.pictograms)
+          ? (m.pictograms as DataMessage['pictograms'])
+          : [],
+        confidence,
+        mood: typeof m.mood === 'string' ? m.mood : 'Neutral',
+        emergency: Boolean(m.emergency),
+        latencyMs: toNumber(m.latencyMs),
+      }
+    case 'reply':
+      return { type: 'reply', id, timestamp: ts, text }
+    case 'mood':
+      return {
+        type: 'mood',
+        id,
+        timestamp: ts,
+        mood: typeof m.mood === 'string' ? m.mood : text,
+      }
+    case 'sign':
+      return { type: 'sign', id, timestamp: ts, text, confidence }
+    default:
+      return null
+  }
+}
+
+function toNumber(v: unknown): number | undefined {
+  const n = typeof v === 'string' ? Number(v) : v
+  return typeof n === 'number' && Number.isFinite(n) ? n : undefined
+}
+
+// ── Socket.IO client (singleton) ────────────────────────────────
+let socket: Socket | null = null
+const subscribers = new Set<(msg: VaakSetuMessage) => void>()
+const localEcho = new Set<string>()
+/** Fallback echo suppression when the backend strips our id. */
+let lastSentAt = 0
+let recentSentFingerprint: string | null = null
+
+function handleIncoming(raw: unknown): void {
+  const msg = fromWire(raw)
+  if (!msg) return
+  if (msg.id && localEcho.has(msg.id)) {
+    localEcho.delete(msg.id)
+    return
+  }
+  // Backend strips ids: drop a same-shape echo within a short window.
+  const fingerprint = `${msg.type}|${msg.type === 'mood' ? msg.mood : msg.text}`
+  if (
+    !msg.id &&
+    recentSentFingerprint !== null &&
+    recentSentFingerprint === fingerprint &&
+    Date.now() - lastSentAt < 1500
+  ) {
+    recentSentFingerprint = null
+    return
+  }
+  subscribers.forEach((cb) => cb(msg))
+}
+
+function ensureSocket(): Socket {
+  if (socket) return socket
+
+  socket = io(API_URL, {
+    transports: ['websocket', 'polling'],
+    reconnection: true,
+    reconnectionAttempts: Infinity,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 5000
+  })
+
+  socket.on(SOCKET_EVENTS.NEW, handleIncoming)
+
+  socket.on(SOCKET_EVENTS.HISTORY, (history: unknown) => {
+    if (!Array.isArray(history)) return
+    history.slice(-50).forEach((raw) => {
+      const msg = fromWire(raw)
+      if (msg) subscribers.forEach((cb) => cb(msg))
+    })
+  })
+
+  socket.on('connect', () => {
+    console.log('[messageBus] Connected to backend:', API_URL)
+  })
+
+  socket.on('disconnect', (reason) => {
+    console.warn('[messageBus] Disconnected:', reason)
+  })
+
+  socket.on('connect_error', (err) => {
+    console.warn('[messageBus] Connection error (will retry):', err.message)
+  })
+
+  return socket
+}
+
+ensureSocket()
+
+// ── Public API — MUST match what pages import ─────────────────────
+
+/**
+ * Subscribe to incoming messages.
+ * Returns an unsubscribe function.
+ */
+export function subscribeToMessages(cb: (msg: VaakSetuMessage) => void): () => void {
+  subscribers.add(cb)
   return () => {
-    channel.removeEventListener("message", handler)
-    localListeners.delete(callback)
+    subscribers.delete(cb)
   }
 }
 
-/** Stable pseudo-user id for this browser session, shown on dashboards. */
+/**
+ * Send a message via the backend.
+ * The backend broadcasts to all connected clients via 'message:new'.
+ */
+export function sendMessage(msg: VaakSetuMessage): void {
+  const s = ensureSocket()
+  if (msg.id) localEcho.add(msg.id)
+  lastSentAt = Date.now()
+  recentSentFingerprint =
+    msg.type === 'mood' ? `mood|${msg.mood}` : `${msg.type}|${msg.text}`
+  s.emit(SOCKET_EVENTS.SEND, { ...toWire(msg), id: msg.id, timestamp: msg.timestamp })
+}
+
+/** Stable pseudo-user for this browser session, shown on dashboards. */
 export function getUserId(): string {
-  let id = localStorage.getItem("vaaksetu-user-id")
+  if (typeof localStorage === 'undefined') return 'anon'
+  let id = localStorage.getItem('vaaksetu-user-id')
   if (!id) {
-    id = `user-${Math.random().toString(36).slice(2, 8).toUpperCase()}`
-    localStorage.setItem("vaaksetu-user-id", id)
+    id = Math.random().toString(36).slice(2, 8).toUpperCase()
+    localStorage.setItem('vaaksetu-user-id', id)
   }
   return id
 }
