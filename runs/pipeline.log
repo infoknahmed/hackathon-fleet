@@ -79,3 +79,4 @@
 {"timestamp": 1789971850.990991, "event": "log_message", "level": "INFO", "message": "[frontend] repair done \u2014 Read `tasks/frontend-task.md` and implement everything specified in it."}
 {"timestamp": 1789971850.9924493, "event": "log_message", "level": "INFO", "message": "Builder: frontend=OK, backend=OK"}
 {"timestamp": 1789971850.9937434, "event": "log_message", "level": "INFO", "message": "Integration: root package.json created"}
+{"timestamp": 1789971851.3866012, "event": "builder_complete", "level": "INFO", "tag": "repair", "success": true}
