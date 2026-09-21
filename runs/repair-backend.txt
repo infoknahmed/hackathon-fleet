@@ -27,4 +27,33 @@ Make sure your API routes are under `/api/*` prefix.
 
 Do NOT touch frontend code or root integration. Only build files inside ./backend.
 
+The previous build (failed: build) had validation errors. Read the build output and fix ALL issues. Do not rewrite working code. Only fix the reported problems.Read `tasks/backend-task.md` and implement everything specified in it.
+
+Build the backend in the ./backend directory:
+- Create ./backend with all necessary files
+- Create a `.gitignore` file inside ./backend to ignore dependencies, `.env`, and database files
+- Create dependency manifest and install dependencies
+- Run node --check server.js at the end to verify server compiles/runs
+- Add a `"test": "echo 'no tests yet' && exit 0"` script
+
+Target Tech Stack Specification:
+- Framework: Node.js / Express 4.x
+- Database: SQLite (better-sqlite3)
+
+Backend Architecture & Data Guidelines (CRITICAL FOR QUALITY):
+1. **Startup Seed Data**: Pre-populate database with 5-10 realistic seed items on initial startup if tables are empty.
+2. **Rich Query Filtering**: Support search (`?q=`), category/status filter (`?category=`, `?status=`), and sorting params on all list GET endpoints.
+3. **Summary Analytics Endpoint**: Provide a `/api/summary` or `/api/stats` endpoint returning key metrics (totals, counts, status breakdowns) for dashboard consumption.
+4. **Robust Input Validation & Error Format**: Return standardized `{ error: string }` response bodies with appropriate HTTP status codes (400, 404, 500) for invalid inputs or errors.
+
+Listen on PORT_BACKEND env var (default 3001).
+Configure CORS with `origin: true`.
+Serve frontend dist from `../frontend/dist/` in production if applicable.
+
+Make sure your API routes are under `/api/*` prefix.
+
+
+
+Do NOT touch frontend code or root integration. Only build files inside ./backend.
+
 The previous build (failed: build) had validation errors. Read the build output and fix ALL issues. Do not rewrite working code. Only fix the reported problems.
