@@ -30,3 +30,11 @@
 {"timestamp": 1789971804.625886, "event": "log_message", "level": "INFO", "message": "Coach repair attempt 3/3 \u2014 10 files missing"}
 {"timestamp": 1789971806.0057766, "event": "log_message", "level": "INFO", "message": "[coach] coach-fix done \u2014 You are a Hackathon Project Coach."}
 {"timestamp": 1789971806.9838824, "event": "coach_complete", "level": "INFO", "success": false}
+{"timestamp": 1789971807.3728004, "event": "builder_start", "level": "INFO", "tag": "build"}
+{"timestamp": 1789971807.3740351, "event": "log_message", "level": "INFO", "message": "============================================================"}
+{"timestamp": 1789971807.3749335, "event": "log_message", "level": "INFO", "message": "PHASE 2/3: BUILDER \u2014 Generating project (build)"}
+{"timestamp": 1789971807.375825, "event": "log_message", "level": "INFO", "message": "============================================================"}
+{"timestamp": 1789971821.5336845, "event": "log_message", "level": "INFO", "message": "[backend] build done \u2014 Read `tasks/backend-task.md` and implement everything specified in it."}
+{"timestamp": 1789971822.4585414, "event": "log_message", "level": "INFO", "message": "[frontend] build done \u2014 Read `tasks/frontend-task.md` and implement everything specified in it."}
+{"timestamp": 1789971822.4597843, "event": "log_message", "level": "INFO", "message": "Builder: frontend=OK, backend=OK"}
+{"timestamp": 1789971842.1358116, "event": "log_message", "level": "INFO", "message": "Integration: root package.json created"}

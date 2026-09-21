@@ -1,0 +1,14 @@
+{
+  "name": "ocal-llmash-qwen25-coder-model-for-intent-prediction-f519208a",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm run dev --prefix frontend\" \"npm run dev --prefix backend\"",
+    "build": "npm run build --prefix frontend && npm run build --prefix backend",
+    "start": "node backend/server.js",
+    "lint": "npm run lint --prefix frontend || true && npm run lint --prefix backend || true",
+    "test": "npm run test --prefix frontend || true && npm run test --prefix backend || true"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.0"
+  }
+}
