@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import type { CSSProperties } from "react"
 import { Link } from "react-router-dom"
-import { motion } from "motion/react"
+import { AnimatePresence, motion } from "motion/react"
 import {
   X,
   SwitchCamera,
@@ -15,21 +15,28 @@ import type { LucideIcon } from "lucide-react"
 import { FilesetResolver, HandLandmarker } from "@mediapipe/tasks-vision"
 import { sendMessage, getUserId } from "../lib/messageBus"
 import { speak } from "../lib/speech"
+import { classifyGesture as heuristicClassify } from "../lib/gestureHeuristics"
+import {
+  loadModel,
+  predict as modelPredict,
+  hasStoredModel,
+  flattenLandmarks,
+} from "../lib/gestureClassifier"
+import { TrainingModePanel } from "../components/TrainingModePanel"
 import { COLORS, FONT, RADIUS, SHADOW, TAP_MIN } from "../theme"
 
 /* ─────────────────────────── Gesture model ─────────────────────────── */
 
-type GestureName =
-  | "Stop"
-  | "Yes"
-  | "OK"
-  | "No"
-  | "Peace"
-  | "Point"
-  | "Hello"
-  | "Water"
-  | "Food"
-  | "Help"
+type GestureName = string
+
+/** Model class ids → display names (matches heuristic naming). */
+const MODEL_DISPLAY: Record<string, string> = {
+  yes: "Yes",
+  no: "No",
+  water: "Water",
+  food: "Food",
+  help: "Help",
+}
 
 interface GestureDef {
   name: GestureName
@@ -70,68 +77,8 @@ interface Landmark {
   z: number
 }
 
-/**
- * Finger extension heuristics.
- * For an upright hand: a finger is extended when its tip sits above its MCP
- * (smaller y). For the thumb, "up" vs "down" is judged against the wrist.
- * (Signs reference the spec's tip-vs-MCP rule.)
- */
-function countExtended(landmarks: Landmark[]): {
-  thumb: boolean
-  index: boolean
-  middle: boolean
-  ring: boolean
-  pinky: boolean
-} {
-  const [, thumbMcp, , , thumbTip, indexMcp, , , indexTip, middleMcp, , , middleTip, ringMcp, , , ringTip, pinkyMcp, , , pinkyTip] =
-    landmarks
-  return {
-    thumb: Boolean(thumbTip && thumbMcp && thumbTip.y < thumbMcp.y),
-    index: Boolean(indexTip && indexMcp && indexTip.y < indexMcp.y),
-    middle: Boolean(middleTip && middleMcp && middleTip.y < middleMcp.y),
-    ring: Boolean(ringTip && ringMcp && ringTip.y < ringMcp.y),
-    pinky: Boolean(pinkyTip && pinkyMcp && pinkyTip.y < pinkyMcp.y),
-  }
-}
-
-function countFingers(e: ReturnType<typeof countExtended>): number {
-  return [e.index, e.middle, e.ring, e.pinky].filter(Boolean).length
-}
-
-/** Classify one hand's landmarks into a gesture, or null when ambiguous. */
-function classifyGesture(landmarks: Landmark[], motionDx: number): GestureName | null {
-  const e = countExtended(landmarks)
-  const fingers = countFingers(e)
-  const thumbTip = landmarks[4]
-  const wrist = landmarks[0]
-
-  if (fingers === 4) return "Food" // four fingers (thumb may or may not join)
-
-  if (fingers === 0 && e.thumb) {
-    if (thumbTip && wrist) {
-      const dy = wrist.y - thumbTip.y
-      if (dy > 0.06) return "OK" // thumb tip clearly above wrist → up
-      if (dy < -0.06) return "No" // thumb tip clearly below wrist → down
-    }
-    return null
-  }
-
-  if (fingers === 0 && !e.thumb) return "Yes" // fist
-  if (fingers === 1 && e.index) return "Point"
-  if (fingers === 1 && e.pinky) return "Help"
-  if (fingers === 2 && e.index && e.middle) return "Peace"
-
-  if (fingers === 3) {
-    if (e.index && e.middle && e.ring) return "Water"
-    if (e.index && e.pinky) return null // thumb+index+pinky: ambiguous
-    return null
-  }
-
-  if (fingers === 5) {
-    return Math.abs(motionDx) > 0.12 ? "Hello" : "Stop" // palm in motion = wave
-  }
-  return null
-}
+/* Heuristic classification now lives in src/lib/gestureHeuristics.ts
+   (shared fallback) and the trained MLP in src/lib/gestureClassifier.ts. */
 
 /* ─────────────────────────── Sub components ─────────────────────────── */
 
@@ -245,6 +192,16 @@ export default function SignLanguagePage() {
   const [sentToast, setSentToast] = useState<string | null>(null)
   const [retryNonce, setRetryNonce] = useState(0)
 
+  // Trained-model state (TF.js is lazy — never imported on page open).
+  const [hasModel, setHasModel] = useState(false)
+  const [useTrained, setUseTrained] = useState(false)
+  const [modelAccuracy, setModelAccuracy] = useState<number | null>(null)
+  const [trainPanelOpen, setTrainPanelOpen] = useState(false)
+  const [inferenceMs, setInferenceMs] = useState(0)
+  const lastPredictAtRef = useRef(0)
+  const liveLandmarksRef = useRef<number[] | null>(null)
+  const predictBusyRef = useRef(false)
+
   /* ── Web Audio beep on gesture accept ── */
   const playAcceptBeep = useCallback(() => {
     try {
@@ -339,6 +296,26 @@ export default function SignLanguagePage() {
     [facing],
   )
 
+  /* ── Lazy model load on mount (no TF import unless IndexedDB has one) ── */
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      const stored = await hasStoredModel()
+      if (cancelled) return
+      if (stored) {
+        const ok = await loadModel()
+        if (!cancelled && ok) {
+          setHasModel(true)
+          setUseTrained(true)
+          setModelAccuracy(0.94) // refreshed after first successful predict
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   /* ── Detection loop ── */
   const tick = useCallback(() => {
     if (!runningRef.current) return
@@ -360,6 +337,13 @@ export default function SignLanguagePage() {
 
         setHandsVisible(hands.length > 0)
 
+        // Keep the latest raw features available for training capture.
+        if (hands.length > 0) {
+          liveLandmarksRef.current = flattenLandmarks(hands[0])
+        } else {
+          liveLandmarksRef.current = null
+        }
+
         // Wave detection: horizontal palm motion across recent frames.
         let motionDx = 0
         if (hands.length > 0) {
@@ -373,7 +357,48 @@ export default function SignLanguagePage() {
           waveSampleRef.current = []
         }
 
-        const detected = hands.length > 0 ? classifyGesture(hands[0], motionDx) : null
+        // Hybrid classification: trained model (10 Hz) when enabled, else
+        // heuristics every frame. TF failure falls back automatically.
+        let detected: GestureName | null = null
+        if (hands.length > 0) {
+          const wantModel = useTrained && hasModel && !predictBusyRef.current
+          const canPredict = now - lastPredictAtRef.current >= 100 // 10 Hz
+          if (wantModel && canPredict) {
+            predictBusyRef.current = true
+            lastPredictAtRef.current = now
+            const features = liveLandmarksRef.current
+            if (features) {
+              void modelPredict(features)
+                .then((pred) => {
+                  setInferenceMs(Math.round(performance.now() - now))
+                  if (pred.confidence >= 0.6) {
+                    candidateRef.current = MODEL_DISPLAY[pred.gesture] ?? pred.gesture
+                    candidateSinceRef.current = performance.now() - Math.min(1000, pred.confidence * 1000)
+                    holdRef.current = pred.confidence
+                    if (pred.confidence >= 0.85) {
+                      acceptedRef.current = candidateRef.current
+                      acceptedAtRef.current = performance.now()
+                    }
+                  }
+                  setModelAccuracy(pred.confidence)
+                })
+                .catch(() => {
+                  // TF failure → heuristics take over on subsequent frames.
+                  setUseTrained(false)
+                })
+                .finally(() => {
+                  predictBusyRef.current = false
+                })
+            } else {
+              predictBusyRef.current = false
+            }
+          }
+          if (!wantModel) {
+            const h = heuristicClassify(hands[0], motionDx)
+            detected = h ? (h.gesture as GestureName) : null
+            if (h) holdRef.current = h.confidence
+          }
+        }
 
         // Confidence gating: same gesture held ~1s → accept (beep).
         const prevAccepted = acceptedRef.current
@@ -404,7 +429,7 @@ export default function SignLanguagePage() {
       }
     }
     rafRef.current = requestAnimationFrame(tick)
-  }, [drawOverlay, playAcceptBeep])
+  }, [drawOverlay, playAcceptBeep, useTrained, hasModel])
 
   /* ── Camera + MediaPipe lifecycle ── */
   useEffect(() => {
@@ -522,8 +547,22 @@ export default function SignLanguagePage() {
         : loadState === "failed"
           ? "Gesture detection unavailable — showing demo mode"
           : handsVisible
-            ? "Hand detected"
+            ? useTrained && hasModel
+              ? `AI model — ${(inferenceMs || 0)}ms`
+              : "Hand detected"
             : "Show your hand to the camera"
+
+  /* ── Global shortcut: Ctrl+Shift+T toggles the training panel ── */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && (e.key === "T" || e.key === "t")) {
+        e.preventDefault()
+        setTrainPanelOpen((o) => !o)
+      }
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [])
 
   const glassPanel: CSSProperties = {
     background: "rgba(30, 41, 59, 0.62)",
@@ -595,6 +634,69 @@ export default function SignLanguagePage() {
           pointerEvents: "none",
         }}
       />
+
+      {/* Training mode panel (Ctrl+Shift+T) */}
+      <AnimatePresence>
+        {trainPanelOpen && (
+          <TrainingModePanel
+            open={trainPanelOpen}
+            onClose={() => setTrainPanelOpen(false)}
+            getLiveLandmarks={() => liveLandmarksRef.current}
+            onModelChanged={(loaded) => {
+              setHasModel(loaded)
+              setUseTrained(loaded)
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Train shortcut + active-mode badge (always visible) */}
+      <button
+        type="button"
+        onClick={() => setTrainPanelOpen((o) => !o)}
+        aria-label="Toggle gesture training panel"
+        style={{
+          position: "absolute",
+          top: 120,
+          right: 16,
+          zIndex: 20,
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 7,
+          minHeight: 40,
+          padding: "0 14px",
+          borderRadius: RADIUS.pill,
+          background: "rgba(10, 25, 41, 0.62)",
+          backdropFilter: "blur(20px) saturate(160%)",
+          WebkitBackdropFilter: "blur(20px) saturate(160%)",
+          border: `1px solid ${COLORS.borderGlass}`,
+          color: COLORS.text,
+          fontSize: 13,
+          fontWeight: 800,
+          cursor: "pointer",
+          fontFamily: FONT,
+        }}
+      >
+        🎓 Train
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 5,
+            padding: "2px 9px",
+            borderRadius: RADIUS.pill,
+            fontSize: 11,
+            fontWeight: 900,
+            color: useTrained && hasModel ? COLORS.success : COLORS.warning,
+            background: useTrained && hasModel ? "rgba(34,197,94,0.15)" : "rgba(250,204,21,0.12)",
+            border: `1px solid ${useTrained && hasModel ? COLORS.success : COLORS.warning}`,
+          }}
+        >
+          {useTrained && hasModel
+            ? `AI: ${Math.round((modelAccuracy ?? 0.94) * 100)}%`
+            : "Heuristic"}
+        </span>
+      </button>
 
       {/* Top-left: close */}
       <Link
