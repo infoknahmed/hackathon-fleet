@@ -52,6 +52,16 @@ export function isModelLoaded(): boolean {
   return model !== null
 }
 
+/** Internal: read-only access to the live model (export tooling). */
+export function __getModel(): import("@tensorflow/tfjs").LayersModel | null {
+  return model
+}
+
+/** Internal: TF module access for export tooling. */
+export async function __getTF(): Promise<TFModule> {
+  return getTF()
+}
+
 export function getClassCount(): number {
   return GESTURES.length
 }
@@ -153,17 +163,30 @@ export function hasStoredModel(): Promise<boolean> {
 export async function loadModel(): Promise<boolean> {
   try {
     const tf = await getTF()
-    const loaded = await tf.loadLayersModel(MODEL_URL)
-    loaded.compile({
-      optimizer: tf.train.adam(0.002),
-      loss: "categoricalCrossentropy",
-      metrics: ["accuracy"],
-    })
-    model = loaded
-    console.info("[gestureClassifier] model loaded from IndexedDB")
-    return true
+    try {
+      const loaded = await tf.loadLayersModel(MODEL_URL)
+      loaded.compile({
+        optimizer: tf.train.adam(0.002),
+        loss: "categoricalCrossentropy",
+        metrics: ["accuracy"],
+      })
+      model = loaded
+      console.info("[gestureClassifier] model loaded from IndexedDB")
+      return true
+    } catch {
+      // Fallback: pre-trained model deployed to public/gesture-model.
+      const deployed = await tf.loadLayersModel("/gesture-model/model.json")
+      deployed.compile({
+        optimizer: tf.train.adam(0.002),
+        loss: "categoricalCrossentropy",
+        metrics: ["accuracy"],
+      })
+      model = deployed
+      console.info("[gestureClassifier] deployed model loaded from /gesture-model")
+      return true
+    }
   } catch {
-    console.info("[gestureClassifier] no stored model — heuristics stay active")
+    console.info("[gestureClassifier] no model available — heuristics stay active")
     return false
   }
 }
