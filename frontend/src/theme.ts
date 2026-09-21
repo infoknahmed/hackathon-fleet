@@ -1,64 +1,69 @@
 import type { CSSProperties } from "react"
+import { ds } from "./styles/design-system"
 
-/** Shared palette + focus styles for all VaakSetu screens. */
+/**
+ * Shared palette + focus styles for all VaakSetu screens.
+ * Values derive from the design system (src/styles/design-system.ts);
+ * legacy keys keep their names so existing pages render unchanged.
+ */
 export const COLORS = {
-  bg: "#0A1929",
-  card: "#1E293B",
-  cardGlass: "rgba(30, 41, 59, 0.55)",
-  accent: "#00B4D8",
-  accentBright: "#22D3EE",
-  accentDeep: "#0891B2",
-  accentSoft: "rgba(0, 180, 216, 0.14)",
-  violet: "#7C3AED",
-  border: "#334155",
-  borderGlass: "rgba(148, 163, 184, 0.16)",
-  text: "#F1F5F9",
-  textDim: "#94A3B8",
-  danger: "#EF4444",
+  bg: ds.colors.bg.primary,
+  card: ds.colors.bg.elevated,
+  cardGlass: "rgba(22, 24, 31, 0.62)",
+  accent: "#00E0FF",
+  accentBright: "#33E8FF",
+  accentDeep: "#0090A8",
+  accentSoft: ds.colors.brand.primarySubtle,
+  violet: ds.colors.brand.secondary,
+  border: ds.colors.border.default,
+  borderGlass: ds.colors.border.subtle,
+  text: ds.colors.text.primary,
+  textDim: ds.colors.text.secondary,
+  danger: ds.colors.semantic.danger,
   dangerSoft: "rgba(239, 68, 68, 0.14)",
-  success: "#10B981",
-  successSoft: "rgba(16, 185, 129, 0.14)",
-  warning: "#FACC15",
+  success: ds.colors.semantic.success,
+  successSoft: "rgba(34, 197, 94, 0.14)",
+  warning: ds.colors.semantic.warning,
 } as const
 
-export const FONT =
-  "'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif"
+export const FONT = ds.typography.fontSans
+export const FONT_MONO = ds.typography.fontMono
 
 /** Corner radius scale (16px = standard glass card). */
 export const RADIUS = {
-  sm: 10,
-  md: 14,
-  lg: 16,
-  xl: 20,
-  pill: 999,
+  sm: ds.radius.sm,
+  md: ds.radius.md,
+  lg: ds.radius.lg,
+  xl: ds.radius.xl,
+  pill: ds.radius.pill,
 } as const
 
 /** Elevation shadows for glass surfaces. */
 export const SHADOW = {
-  sm: "0 4px 16px rgba(2, 8, 20, 0.3)",
-  md: "0 8px 32px rgba(2, 8, 20, 0.35), inset 0 1px 0 rgba(255,255,255,0.05)",
-  lg: "0 12px 40px rgba(2, 8, 20, 0.45), inset 0 1px 0 rgba(255,255,255,0.06)",
-  accentGlow: `0 8px 24px rgba(0, 180, 216, 0.35)`,
+  sm: ds.shadow.sm,
+  md: ds.shadow.base,
+  lg: ds.shadow.lg,
+  accentGlow: ds.shadow.glow,
   dangerGlow: "0 8px 30px rgba(239, 68, 68, 0.45)",
 } as const
 
 /** Teal gradient for primary buttons / hero accents. */
 export const GRADIENT = {
-  teal: "linear-gradient(135deg, #22D3EE 0%, #00B4D8 45%, #0891B2 100%)",
+  teal: ds.colors.brand.gradient,
   tealText: "#04121F",
-  aurora: "radial-gradient(circle at 20% 20%, rgba(0,180,216,0.10), transparent 55%), radial-gradient(circle at 80% 80%, rgba(124,58,237,0.10), transparent 55%)",
+  aurora: `radial-gradient(circle at 20% 20%, ${ds.colors.brand.primarySubtle}, transparent 55%), radial-gradient(circle at 80% 80%, rgba(124,58,237,0.10), transparent 55%)`,
 } as const
 
 /** Standard glass card surface. */
 export function glassStyle(strong = false): CSSProperties {
   return strong
     ? {
-        background: "rgba(23, 34, 51, 0.78)",
+        background: "rgba(15, 17, 23, 0.85)",
         backdropFilter: "blur(20px) saturate(160%)",
         WebkitBackdropFilter: "blur(20px) saturate(160%)",
-        border: `1px solid rgba(148, 163, 184, 0.18)`,
+        border: `1px solid ${ds.colors.border.default}`,
         borderRadius: RADIUS.lg,
-        boxShadow: SHADOW.lg,
+        boxShadow: ds.shadow.lg,
       }
     : {
         background: COLORS.cardGlass,

@@ -79,7 +79,7 @@ export function TopNav({ right }: Props) {
         gap: 12,
         flexWrap: "wrap",
         padding: "10px 16px",
-        background: "rgba(10, 25, 41, 0.72)",
+        background: "rgba(8, 9, 12, 0.78)",
         backdropFilter: "blur(20px) saturate(160%)",
         WebkitBackdropFilter: "blur(20px) saturate(160%)",
         borderBottom: `1px solid ${COLORS.borderGlass}`,
@@ -107,9 +107,9 @@ export function TopNav({ right }: Props) {
             width: 38,
             height: 38,
             borderRadius: RADIUS.md,
-            background: `linear-gradient(135deg, ${COLORS.accentBright}, ${COLORS.accentDeep})`,
+            background: `linear-gradient(135deg, ${COLORS.accent}, ${COLORS.violet})`,
             fontSize: 20,
-            boxShadow: "0 4px 14px rgba(0, 180, 216, 0.4)",
+            boxShadow: "0 4px 14px rgba(0, 224, 255, 0.35)",
           }}
           aria-hidden="true"
         >

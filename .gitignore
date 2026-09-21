@@ -13,3 +13,6 @@ venv/
 *.log
 .DS_Store
 .multifleet/
+
+# Runtime SQLite data
+backend/data/

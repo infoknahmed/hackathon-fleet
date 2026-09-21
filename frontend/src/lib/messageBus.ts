@@ -5,6 +5,118 @@ import { io, Socket } from 'socket.io-client'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001'
 
+/** REST base — same origin as the socket, used for persistence + hydration. */
+const REST_URL = API_URL.replace(/\/$/, '')
+
+/** Persist a message via the backend REST API (fire-and-forget). */
+function persistToApi(payload: WireShape): void {
+  fetch(`${REST_URL}/api/messages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  }).catch((err) => console.warn('[messageBus] REST persist failed:', err))
+}
+
+/** Hydrate recent messages from the backend on page load. */
+export async function fetchHistory(limit = 50): Promise<VaakSetuMessage[]> {
+  try {
+    const res = await fetch(`${REST_URL}/api/messages?limit=${limit}`)
+    if (!res.ok) return []
+    const raw = (await res.json()) as unknown[]
+    return raw
+      .map((r) => fromWire(r))
+      .filter((m): m is VaakSetuMessage => m !== null)
+      .reverse() // oldest → newest so pages can append
+  } catch (err) {
+    console.warn('[messageBus] fetchHistory failed:', err)
+    return []
+  }
+}
+
+/** Fetch a specific user's messages (History tab). */
+export async function fetchUserMessages(userId: string, limit = 50): Promise<VaakSetuMessage[]> {
+  try {
+    const res = await fetch(`${REST_URL}/api/messages?userId=${encodeURIComponent(userId)}&limit=${limit}`)
+    if (!res.ok) return []
+    const raw = (await res.json()) as unknown[]
+    return raw
+      .map((r) => fromWire(r))
+      .filter((m): m is VaakSetuMessage => m !== null)
+  } catch (err) {
+    console.warn('[messageBus] fetchUserMessages failed:', err)
+    return []
+  }
+}
+
+/** DELETE /api/messages?userId=X — clear a user's persisted history. */
+export async function deleteUserMessages(userId: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${REST_URL}/api/messages?userId=${encodeURIComponent(userId)}`, {
+      method: 'DELETE',
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+/** POST /api/replies — persist a guardian reply. */
+export async function postReply(text: string, userId: string, messageId?: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${REST_URL}/api/replies`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, userId, messageId }),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+/** PATCH /api/messages/:id/delivered — mark a message as delivered. */
+export async function markDelivered(id: string): Promise<void> {
+  try {
+    await fetch(`${REST_URL}/api/messages/${encodeURIComponent(id)}/delivered`, {
+      method: 'PATCH',
+    })
+  } catch {
+    /* best-effort */
+  }
+}
+
+/** GET /api/admin/stats — admin dashboard numbers. */
+export interface AdminStats {
+  totalMessages: number
+  emergencies: number
+  activeUsers: number
+  avgConfidence: number
+  byRole: { name: string; value: number }[]
+}
+
+export async function fetchAdminStats(days = 7): Promise<AdminStats | null> {
+  try {
+    const res = await fetch(`${REST_URL}/api/admin/stats?days=${days}`)
+    if (!res.ok) return null
+    return (await res.json()) as AdminStats
+  } catch {
+    return null
+  }
+}
+
+/** GET /api/admin/timeline — per-day message counts. */
+export async function fetchAdminTimeline(
+  days = 7,
+): Promise<{ day: string; count: number }[] | null> {
+  try {
+    const res = await fetch(`${REST_URL}/api/admin/timeline?days=${days}`)
+    if (!res.ok) return null
+    return (await res.json()) as { day: string; count: number }[]
+  } catch {
+    return null
+  }
+}
+
 /** Base fields every message carries. */
 export interface BaseMessage {
   id?: string
@@ -240,7 +352,14 @@ export function sendMessage(msg: VaakSetuMessage): void {
   lastSentAt = Date.now()
   recentSentFingerprint =
     msg.type === 'mood' ? `mood|${msg.mood}` : `${msg.type}|${msg.text}`
-  s.emit(SOCKET_EVENTS.SEND, { ...toWire(msg), id: msg.id, timestamp: msg.timestamp })
+  const payload: WireShape = {
+    ...toWire(msg),
+    id: msg.id ?? `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    timestamp: msg.timestamp,
+  }
+  // Persist via REST (SQLite) — survives restarts; socket stays real-time.
+  persistToApi(payload)
+  s.emit(SOCKET_EVENTS.SEND, payload)
 }
 
 /** Stable pseudo-user for this browser session, shown on dashboards. */

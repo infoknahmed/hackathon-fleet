@@ -10,7 +10,6 @@
                     "test":  "echo \"No tests specified\" \u0026\u0026 exit 0"
                 },
     "dependencies":  {
-                         "better-sqlite3":  "^13.0.3",
                          "cors":  "^2.8.5",
                          "dotenv":  "^16.4.7",
                          "express":  "^4.21.2",

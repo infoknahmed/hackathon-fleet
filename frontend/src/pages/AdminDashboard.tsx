@@ -15,7 +15,12 @@ import {
 } from "recharts"
 import { MessageSquare, Users, Zap, Siren, ShieldCheck } from "lucide-react"
 import { StatCard } from "../components/StatCard"
-import { subscribeToMessages, getUserId } from "../lib/messageBus"
+import {
+  subscribeToMessages,
+  getUserId,
+  fetchAdminStats,
+  fetchHistory,
+} from "../lib/messageBus"
 import type { VaakSetuMessage } from "../lib/messageBus"
 import { COLORS, FONT, RADIUS, SHADOW } from "../theme"
 import TopNav from "../components/TopNav"
@@ -30,6 +35,8 @@ const MOOD_COLORS: Record<string, string> = {
 export default function AdminDashboard() {
   const [messages, setMessages] = useState<VaakSetuMessage[]>([])
   const [lastLatency, setLastLatency] = useState<number | null>(null)
+  const [dbStats, setDbStats] = useState<Awaited<ReturnType<typeof fetchAdminStats>>>(null)
+  const [secondsAgo, setSecondsAgo] = useState(0)
 
   useEffect(() => {
     const unsubscribe = subscribeToMessages((msg) => {
@@ -42,10 +49,34 @@ export default function AdminDashboard() {
     return unsubscribe
   }, [])
 
-  const total = messages.length
-  const emergencies = messages.filter(
+  // Pull real numbers from SQLite; auto-refresh every 10 seconds.
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      const [stats, history] = await Promise.all([fetchAdminStats(7), fetchHistory(200)])
+      if (cancelled) return
+      if (stats) setDbStats(stats)
+      if (history.length > 0) setMessages((prev) => (prev.length === 0 ? history.slice().reverse() : prev))
+      setSecondsAgo(0)
+    }
+    void load()
+    const interval = window.setInterval(load, 10_000)
+    const ticker = window.setInterval(() => {
+      setSecondsAgo((s) => s + 1)
+    }, 1000)
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+      window.clearInterval(ticker)
+    }
+  }, [])
+
+  // Prefer real DB numbers; fall back to session-only values.
+  const total = dbStats?.totalMessages ?? messages.length
+  const emergencies = dbStats?.emergencies ?? messages.filter(
     (m) => m.type === "message" && m.emergency,
   ).length
+  const activeUsers = dbStats?.activeUsers ?? 1
   const avgLatency =
     lastLatency !== null
       ? Math.round(
@@ -72,14 +103,16 @@ export default function AdminDashboard() {
     return buckets
   }, [messages])
 
+  // Mood mix: DB by-role breakdown when available, else live session.
   const moodData = useMemo(() => {
+    if (dbStats?.byRole?.length) return dbStats.byRole
     const counts = new Map<string, number>()
     for (const m of messages) {
       if (m.type === "reply" || m.type === "sign") continue
       counts.set(m.mood, (counts.get(m.mood) ?? 0) + 1)
     }
     return [...counts.entries()].map(([name, value]) => ({ name, value }))
-  }, [messages])
+  }, [dbStats, messages])
 
   const cardStyle = {
     background: "rgba(30, 41, 59, 0.55)",
@@ -135,7 +168,7 @@ export default function AdminDashboard() {
               }}
             />
             <ShieldCheck size={15} strokeWidth={2.4} aria-hidden="true" />
-            BroadcastChannel — Connected
+            SQLite — Connected
           </span>
         }
       />
@@ -176,7 +209,7 @@ export default function AdminDashboard() {
           <div style={{ flex: 1, minWidth: 220 }}>
             <h1 style={{ margin: 0, fontSize: 28, fontWeight: 800 }}>Admin Dashboard</h1>
             <p style={{ margin: 0, fontSize: 14, color: COLORS.textDim }}>
-              Live platform analytics · {getUserId()}
+              Live platform analytics · {getUserId()} · Last updated: {secondsAgo}s ago
             </p>
           </div>
         </header>
@@ -187,7 +220,7 @@ export default function AdminDashboard() {
           style={{ display: "flex", gap: 16, flexWrap: "wrap" }}
         >
           <StatCard icon={MessageSquare} label="Total Messages" value={total} accent={COLORS.accent} />
-          <StatCard icon={Users} label="Active Users" value={1} accent={COLORS.success} />
+          <StatCard icon={Users} label="Active Users" value={activeUsers} accent={COLORS.success} />
           <StatCard
             icon={Zap}
             label="Avg Latency"

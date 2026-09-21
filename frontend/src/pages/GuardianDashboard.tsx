@@ -3,7 +3,13 @@ import { useSearchParams } from "react-router-dom"
 import { AnimatePresence, motion } from "motion/react"
 import { Trash2, Radio, X } from "lucide-react"
 import { FeedMessageCard } from "../components/MessageCard"
-import { subscribeToMessages, sendMessage } from "../lib/messageBus"
+import {
+  subscribeToMessages,
+  sendMessage,
+  fetchHistory,
+  postReply,
+  markDelivered,
+} from "../lib/messageBus"
 import type { VaakSetuMessage } from "../lib/messageBus"
 import { speak, playEmergencyBeep } from "../lib/speech"
 import { startDemo, stopDemo } from "../lib/demoRunner"
@@ -49,6 +55,24 @@ export default function GuardianDashboard() {
     return unsubscribe
   }, [handleMessage])
 
+  // Hydrate the last 100 persisted messages from SQLite on mount.
+  useEffect(() => {
+    let cancelled = false
+    fetchHistory(100).then((history) => {
+      if (cancelled || history.length === 0) return
+      setMessages((prev) => {
+        const seen = new Set(prev.map((m) => m.id))
+        const hydrated = history
+          .filter((m) => m.type !== "reply" && m.id && !seen.has(m.id))
+          .map((m) => ({ ...m, id: m.id as string }) as FeedMessage)
+        return [...hydrated.reverse(), ...prev]
+      })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   // Demo mode: ?demo=true auto-plays a scripted scenario.
   useEffect(() => {
     if (searchParams.get("demo") !== "true") return
@@ -69,6 +93,12 @@ export default function GuardianDashboard() {
     const trimmed = text.trim()
     if (!trimmed) return
     sendMessage({ type: "reply", text: trimmed, timestamp: Date.now() })
+    // Persist the reply against the original message's user.
+    const target = messages.find((m) => m.id === messageId)
+    const targetUserId = target && "userId" in target && typeof target.userId === "string" ? target.userId : "anon"
+    void postReply(trimmed, targetUserId, messageId)
+    // Acknowledge delivery back to the backend.
+    if (messageId) void markDelivered(messageId)
     setReplyForId(null)
     setReplyToastId(messageId)
     window.setTimeout(

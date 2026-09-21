@@ -9,13 +9,19 @@ import {
   SlidersHorizontal,
   Mic,
   Languages,
+  Info,
   Check,
   X,
 } from "lucide-react"
 import { PictogramGrid, SelectionChips } from "../components/PictogramGrid"
 import type { Pictogram } from "../components/PictogramGrid"
 import { predictSentence } from "../lib/predict"
-import { sendMessage, subscribeToMessages, getUserId } from "../lib/messageBus"
+import {
+  sendMessage,
+  subscribeToMessages,
+  getUserId,
+  deleteUserMessages,
+} from "../lib/messageBus"
 import type { VaakSetuMessage, ReplyMessage } from "../lib/messageBus"
 import { LANGUAGES, lookupTranslation } from "../lib/translations"
 import type { LanguageCode } from "../lib/translations"
@@ -29,6 +35,10 @@ import {
   setCurrentLanguage,
   getVoices,
   waitForVoices,
+  hasNativeVoice,
+  unsupportedLanguages,
+  selectVoice,
+  LANGUAGE_TEST_PHRASES,
 } from "../lib/speech"
 import type { VoiceSettings } from "../lib/speech"
 import { COLORS, FONT, RADIUS, SHADOW, TAP_MIN } from "../theme"
@@ -75,6 +85,8 @@ export default function UserDashboard() {
     loadVoiceSettings(),
   )
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>(() => getVoices())
+  const [voiceTestLang, setVoiceTestLang] = useState<string>("en")
+  const [voiceTestResult, setVoiceTestResult] = useState<string | null>(null)
   const [language, setLanguage] = useState<string>(() => getCurrentLanguage())
   const [lastReply, setLastReply] = useState<(ReplyMessage & { read: boolean }) | null>(
     null,
@@ -154,6 +166,20 @@ export default function UserDashboard() {
     return null
   }
 
+  /** Settings → voice tester: speaks the language's test phrase and reports the outcome. */
+  const handleTestVoice = () => {
+    const phrase = LANGUAGE_TEST_PHRASES[voiceTestLang] ?? LANGUAGE_TEST_PHRASES.en
+    const voice = selectVoice(voiceTestLang)
+    if (voice) {
+      setVoiceTestResult(`✅ ${voice.name} (${voice.lang})`)
+    } else {
+      setVoiceTestResult(
+        `⚠️ No ${voiceTestLang.toUpperCase()} voice on this device — speaking romanized fallback`,
+      )
+    }
+    speak(phrase, loadVoiceSettings(), { langCode: voiceTestLang })
+  }
+
   const handleSpeak = () => {
     const result = predictSentence(selected.map((s) => s.label))
     setSentence(result.text)
@@ -199,6 +225,19 @@ export default function UserDashboard() {
   }
 
   const last20 = useMemo(() => history.slice(0, 20), [history])
+
+  /** History tab → refresh from SQLite + clear via DELETE /api/messages. */
+  const handleClearHistory = async () => {
+    const userId = getUserId()
+    const ok = await deleteUserMessages(userId)
+    if (ok) {
+      localStorage.removeItem(HISTORY_KEY)
+      setHistory([])
+      showToast("History cleared ✓")
+    } else {
+      showToast("Could not clear history")
+    }
+  }
 
   const tabButton = (id: Tab): CSSProperties => ({
     display: "inline-flex",
@@ -509,9 +548,31 @@ export default function UserDashboard() {
             transition={{ duration: 0.3 }}
             aria-label="Message history"
           >
-            <h2 style={{ fontSize: 20, fontWeight: 800, marginBottom: 12 }}>
-              Last {last20.length} messages
-            </h2>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
+              <h2 style={{ fontSize: 20, fontWeight: 800, margin: 0 }}>
+                Last {last20.length} messages
+              </h2>
+              <button
+                type="button"
+                onClick={handleClearHistory}
+                disabled={history.length === 0}
+                className="btn-ghost"
+                aria-label="Clear message history"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 7,
+                  minHeight: TAP_MIN,
+                  padding: "8px 16px",
+                  fontSize: 14,
+                  color: COLORS.danger,
+                  borderColor: "rgba(239, 68, 68, 0.5)",
+                  fontFamily: FONT,
+                }}
+              >
+                <Trash2 size={15} strokeWidth={2.4} aria-hidden="true" /> Clear history
+              </button>
+            </div>
             {last20.length === 0 ? (
               <p style={{ color: COLORS.textDim, fontSize: 16 }}>
                 No messages yet — tap pictograms and press Speak.
@@ -581,7 +642,7 @@ export default function UserDashboard() {
               boxShadow: SHADOW.md,
             }}
           >
-            {/* Language selection */}
+            {/* Language selection (unsupported languages disabled) */}
             <div>
               <label htmlFor="language-select" style={{ fontSize: 16, fontWeight: 700, display: "flex", alignItems: "center", gap: 7, marginBottom: 8 }}>
                 <Languages size={17} aria-hidden="true" /> Language
@@ -592,15 +653,85 @@ export default function UserDashboard() {
                 onChange={(e) => handleLanguageChange(e.target.value)}
                 style={selectStyle}
               >
-                {LANGUAGES.map((l) => (
-                  <option key={l.code} value={l.code}>
-                    {l.label}
-                  </option>
-                ))}
+                {LANGUAGES.map((l) => {
+                  const supported = hasNativeVoice(l.code)
+                  return (
+                    <option
+                      key={l.code}
+                      value={l.code}
+                      disabled={!supported && l.code !== "en"}
+                      title={supported ? undefined : "Not supported on this device"}
+                    >
+                      {l.label}{supported || l.code === "en" ? "" : " — not supported on this device"}
+                    </option>
+                  )
+                })}
               </select>
               <p style={{ margin: "6px 0 0", fontSize: 13, color: COLORS.textDim }}>
                 Speak will say sentences in this language when a translation exists.
               </p>
+              {unsupportedLanguages(LANGUAGES.map((l) => l.code)).length > 0 && (
+                <p
+                  style={{
+                    margin: "6px 0 0",
+                    fontSize: 12.5,
+                    color: COLORS.warning,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                >
+                  <Info size={14} aria-hidden="true" />
+                  No installed voice for: {unsupportedLanguages(LANGUAGES.map((l) => l.code)).join(", ").toUpperCase()} — romanized audio will be used
+                </p>
+              )}
+            </div>
+
+            {/* Voice tester */}
+            <div>
+              <label htmlFor="voice-test-lang" style={{ fontSize: 16, fontWeight: 700, display: "block", marginBottom: 8 }}>
+                Voice tester
+              </label>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <select
+                  id="voice-test-lang"
+                  value={voiceTestLang}
+                  onChange={(e) => {
+                    setVoiceTestLang(e.target.value)
+                    setVoiceTestResult(null)
+                  }}
+                  style={{ ...selectStyle, flex: 1, minWidth: 150, width: "auto" }}
+                >
+                  {LANGUAGES.map((l) => (
+                    <option key={l.code} value={l.code}>
+                      {l.label}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={handleTestVoice}
+                  className="btn-ghost"
+                  style={{
+                    minHeight: TAP_MIN,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "0 18px",
+                    fontSize: 15,
+                    color: COLORS.accentBright,
+                    borderColor: "rgba(0, 180, 216, 0.5)",
+                    fontFamily: FONT,
+                  }}
+                >
+                  <Volume2 size={17} aria-hidden="true" /> Test Voice
+                </button>
+              </div>
+              {voiceTestResult && (
+                <p style={{ margin: "8px 0 0", fontSize: 13, fontWeight: 700, color: COLORS.textDim }}>
+                  {voiceTestResult}
+                </p>
+              )}
             </div>
 
             <div>
