@@ -163,6 +163,7 @@ export function hasStoredModel(): Promise<boolean> {
 export async function loadModel(): Promise<boolean> {
   try {
     const tf = await getTF()
+    console.log("[gestureClassifier] attempting load from IndexedDB")
     try {
       const loaded = await tf.loadLayersModel(MODEL_URL)
       loaded.compile({
@@ -171,22 +172,33 @@ export async function loadModel(): Promise<boolean> {
         metrics: ["accuracy"],
       })
       model = loaded
-      console.info("[gestureClassifier] model loaded from IndexedDB")
+      console.log("[gestureClassifier] model loaded successfully (IndexedDB)")
       return true
-    } catch {
-      // Fallback: pre-trained model deployed to public/gesture-model.
-      const deployed = await tf.loadLayersModel("/gesture-model/model.json")
-      deployed.compile({
-        optimizer: tf.train.adam(0.002),
-        loss: "categoricalCrossentropy",
-        metrics: ["accuracy"],
-      })
-      model = deployed
-      console.info("[gestureClassifier] deployed model loaded from /gesture-model")
-      return true
+    } catch (idbErr) {
+      const url = "/gesture-model/model.json"
+      console.log("[gestureClassifier] IndexedDB empty — attempting load from", url)
+      try {
+        const head = await fetch(url)
+        console.log("[gestureClassifier] response status:", head.status)
+        if (!head.ok) throw new Error(`HTTP ${head.status} for ${url}`)
+        const deployed = await tf.loadLayersModel(url)
+        deployed.compile({
+          optimizer: tf.train.adam(0.002),
+          loss: "categoricalCrossentropy",
+          metrics: ["accuracy"],
+        })
+        model = deployed
+        console.log("[gestureClassifier] model loaded successfully (deployed)")
+        return true
+      } catch (deployErr) {
+        const msg = deployErr instanceof Error ? deployErr.message : String(deployErr)
+        console.log("[gestureClassifier] load failed:", msg)
+        return false
+      }
     }
-  } catch {
-    console.info("[gestureClassifier] no model available — heuristics stay active")
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.log("[gestureClassifier] load failed:", msg)
     return false
   }
 }

@@ -19,7 +19,6 @@ import { classifyGesture as heuristicClassify } from "../lib/gestureHeuristics"
 import {
   loadModel,
   predict as modelPredict,
-  hasStoredModel,
   flattenLandmarks,
 } from "../lib/gestureClassifier"
 import { TrainingModePanel } from "../components/TrainingModePanel"
@@ -296,19 +295,15 @@ export default function SignLanguagePage() {
     [facing],
   )
 
-  /* ── Lazy model load on mount (no TF import unless IndexedDB has one) ── */
+  /* ── Lazy model load on mount (IndexedDB first, then deployed model) ── */
   useEffect(() => {
     let cancelled = false
     void (async () => {
-      const stored = await hasStoredModel()
-      if (cancelled) return
-      if (stored) {
-        const ok = await loadModel()
-        if (!cancelled && ok) {
-          setHasModel(true)
-          setUseTrained(true)
-          setModelAccuracy(0.94) // refreshed after first successful predict
-        }
+      const ok = await loadModel()
+      if (!cancelled && ok) {
+        setHasModel(true)
+        setUseTrained(true)
+        setModelAccuracy(0.94) // refreshed after first successful predict
       }
     })()
     return () => {

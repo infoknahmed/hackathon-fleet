@@ -98,7 +98,7 @@ const result = await send('Runtime.evaluate', {
     return {
       trainMs,
       metrics,
-      modelJson: JSON.stringify({ modelTopology: artifacts.modelTopology, weightsManifest: [{ paths: ['weights.bin'], specs: artifacts.weightSpecs }], format: 'tfjs-graph-model', generatedBy: 'vaaksetu-fast-train' }),
+      modelJson: JSON.stringify({ modelTopology: artifacts.modelTopology, weightsManifest: [{ paths: ['weights.bin'], weights: artifacts.weightSpecs }], format: 'tfjs-graph-model', generatedBy: 'vaaksetu-fast-train' }),
       weightB64,
     }
   })()`,
