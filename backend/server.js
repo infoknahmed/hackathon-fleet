@@ -1,41 +1,84 @@
-const express = require('express');
+﻿const express = require('express');
+const http = require('http');
 const cors = require('cors');
 const path = require('path');
+const { Server } = require('socket.io');
+const { v4: uuidv4 } = require('uuid');
+const db = require('./db');
 
-const app = express();
 const PORT = process.env.PORT_BACKEND || process.env.PORT || 3001;
-
-app.use(cors());
+const app = express();
+app.use(cors({ origin: true }));
 app.use(express.json());
 
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', app: 'ocal llmash qwen2.5-coder model for intent prediction- UI: Dark mode, glassmorphism, accessible large-tap targets, high contrastDEMO FLOW (must work end-to-end):1. User taps 3 pictograms on screen2. AI predicts a full sentence3. Phone speaks it aloud in under 1 second4. Caregiver screen (second device) shows the message liveDELIVERABLES:- Working frontend + backend- Deployed to a live URL- Demo script for judges (HACKATHON.md)- Impact metrics (lives improved, cost saved vs $5,000 hardware)
-
-[TECH STACK REQUIRED: Vite + React + Express]', timestamp: new Date().toISOString() });
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: { origin: '*', methods: ['GET', 'POST'] }
 });
 
-app.get('/api/data', (req, res) => {
+function makeMessage(body) {
+  return {
+    id: uuidv4(),
+    timestamp: new Date().toISOString(),
+    userId: body.userId || 'anon',
+    role: body.role || 'user',
+    content: body.content || '',
+    confidence: body.confidence ?? 0,
+    lang: body.lang || 'en',
+    emergency: !!body.emergency,
+  };
+}
+
+app.get('/api/health', (req, res) => {
   res.json({
-    message: 'Base API data loaded successfully',
-    items: [
-      { id: 1, title: 'Sample Transaction 1', amount: 1500, type: 'credit' },
-      { id: 2, title: 'Sample Expense 2', amount: 450, type: 'debit' }
-    ]
+    status: 'ok',
+    uptime: process.uptime(),
+    messageCount: db.getMessageCount(),
+    node: 'laptop-c',
+    service: 'vaaksetu-backend',
+    timestamp: new Date().toISOString()
+  });
+});
+
+app.get('/api/messages', (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit) || 50, 500);
+  res.json(db.getRecentMessages(limit));
+});
+
+app.post('/api/messages', (req, res) => {
+  const msg = makeMessage(req.body || {});
+  db.insertMessage(msg);
+  io.emit('message:new', msg);
+  res.status(201).json(msg);
+});
+
+app.get('/health', (req, res) => res.redirect('/api/health'));
+app.get('/sentences', (req, res) => res.json(db.getRecentMessages(100)));
+
+io.on('connection', (socket) => {
+  console.log('client connected', socket.id);
+  socket.emit('messages:history', db.getRecentMessages(50));
+
+  socket.on('message:send', (data) => {
+    const msg = makeMessage(data || {});
+    db.insertMessage(msg);
+    io.emit('message:new', msg);
+  });
+
+  socket.on('disconnect', () => {
+    console.log('client disconnected', socket.id);
   });
 });
 
 const frontendDist = path.join(__dirname, '..', 'frontend', 'dist');
 app.use(express.static(frontendDist));
 app.get('*', (req, res) => {
-  if (!req.path.startsWith('/api')) {
-    res.sendFile(path.join(frontendDist, 'index.html'), (err) => {
-      if (err) {
-        res.status(200).send('<h2>API Server Running. Frontend dist not built yet.</h2>');
-      }
-    });
-  }
+  if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'not found' });
+  res.sendFile(path.join(frontendDist, 'index.html'), (err) => {
+    if (err) res.status(200).send('<h2>API Server Running. Frontend dist not built yet.</h2>');
+  });
 });
 
-app.listen(PORT, () => {
-  console.log(`Backend API server running on http://localhost:${PORT}`);
+server.listen(PORT, '0.0.0.0', () => {
+  console.log('VaakSetu API listening on port ' + PORT);
 });

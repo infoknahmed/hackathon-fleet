@@ -1,9 +1,9 @@
-{
+﻿{
   "nodeName": "laptop-a",
   "priority": 0,
   "peers": [
     {"name": "laptop-b", "host": "192.168.1.14"},
-    {"name": "laptop-c", "host": "192.168.1.53"}
+    {"name": "laptop-c", "host": "192.168.1.48"}
   ],
   "fallbackChain": ["discord", "nats", "http", "ssh", "git"]
 }
