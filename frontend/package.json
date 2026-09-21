@@ -10,12 +10,19 @@
     "test": "echo \"No tests specified\" && exit 0"
   },
   "dependencies": {
+    "idb": "^8.0.3",
+    "lucide-react": "^0.469.0",
+    "motion": "^13.4.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "lucide-react": "^0.469.0"
+    "react-router-dom": "^7.18.4",
+    "recharts": "^3.10.1"
   },
   "devDependencies": {
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^7.0.2",
     "vite": "^5.4.19"
   }
 }
