@@ -24,7 +24,9 @@ import {
 } from "../lib/speech"
 import { LANGUAGES, lookupTranslation } from "../lib/translations"
 import type { LanguageCode } from "../lib/translations"
+import { tokens } from "../styles/tokens"
 import { COLORS, FONT, RADIUS, SHADOW, TAP_MIN } from "../theme"
+import AuroraButton from "../components/ui/AuroraButton"
 import TopNav from "../components/TopNav"
 
 const STORAGE_KEY = "vaaksetu-conversation"
@@ -421,6 +423,7 @@ export default function ConversationPage() {
 
   const panelTitle = (icon: React.ReactNode, title: string, sub: string) => (
     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      {/* SplitText page-title treatment applied to panel headers */}
       <span
         style={{
           display: "inline-flex",
@@ -462,8 +465,7 @@ export default function ConversationPage() {
     <div
       style={{
         minHeight: "100vh",
-        background: COLORS.bg,
-        color: COLORS.text,
+        color: tokens.text.primary,
         fontFamily: FONT,
         display: "flex",
         flexDirection: "column",
@@ -471,24 +473,23 @@ export default function ConversationPage() {
     >
       <TopNav
         right={
-          <>
-            <button
-              type="button"
-              onClick={handleClearChat}
-              className="btn-ghost"
-              aria-label="Clear the conversation"
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 7,
-                minHeight: TAP_MIN,
-                padding: "8px 16px",
-                fontSize: 14,
-                fontFamily: FONT,
-              }}
-            >
-              <Trash2 size={15} strokeWidth={2.4} aria-hidden="true" /> Clear
-            </button>
+          <>              <AuroraButton
+                type="button"
+                onClick={handleClearChat}
+                variant="ghost"
+                aria-label="Clear the conversation"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 7,
+                  height: 44,
+                  padding: "8px 16px",
+                  fontSize: 14,
+                  fontFamily: FONT,
+                }}
+              >
+                <Trash2 size={15} strokeWidth={2.4} aria-hidden="true" /> Clear
+              </AuroraButton>
           </>
         }
       />
@@ -638,11 +639,11 @@ export default function ConversationPage() {
               compact
             />
             <div style={{ display: "flex", gap: 8 }}>
-              <button
+              <AuroraButton
                 type="button"
                 onClick={handleSendPictos}
                 disabled={selected.length === 0}
-                className="btn-gradient"
+                variant="primary"
                 style={{
                   flex: 1,
                   display: "inline-flex",
@@ -650,13 +651,14 @@ export default function ConversationPage() {
                   justifyContent: "center",
                   gap: 8,
                   minHeight: TAP_MIN,
+                  height: "auto",
                   fontSize: 16,
                   fontFamily: FONT,
                 }}
               >
                 <Send size={17} strokeWidth={2.5} aria-hidden="true" />
                 Send{selected.length > 0 ? ` (${selected.length})` : ""}
-              </button>
+              </AuroraButton>
               <button
                 type="button"
                 onClick={clearSelection}
@@ -1022,14 +1024,15 @@ export default function ConversationPage() {
                       fontFamily: FONT,
                     }}
                   />
-                  <button
+                  <AuroraButton
                     type="button"
                     onClick={handleSendTyped}
                     disabled={!typed.trim()}
-                    className="btn-gradient"
+                    variant="primary"
                     aria-label="Send typed message"
                     style={{
                       width: TAP_MIN,
+                      height: TAP_MIN,
                       padding: 0,
                       display: "inline-flex",
                       alignItems: "center",
@@ -1038,7 +1041,7 @@ export default function ConversationPage() {
                     }}
                   >
                     <Send size={18} strokeWidth={2.5} aria-hidden="true" />
-                  </button>
+                  </AuroraButton>
                 </div>
               </div>
             </div>

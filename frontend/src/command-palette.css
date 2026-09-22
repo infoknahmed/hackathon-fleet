@@ -1,0 +1,88 @@
+/* cmdk palette — aurora dark theme */
+.cmdk-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 100 !important;
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: center !important;
+  padding: 14vh 16px 0 !important;
+  background: rgba(5, 6, 10, 0.85) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+}
+
+.cmdk-panel {
+  width: 100%;
+  max-width: 560px;
+  background: rgba(10, 12, 18, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(0, 224, 255, 0.08);
+  font-family: 'Inter Display', system-ui, sans-serif;
+}
+
+.cmdk-panel [cmdk-input] {
+  width: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #f7f8fa;
+  font-size: 15px;
+  padding: 16px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.cmdk-panel [cmdk-input]::placeholder {
+  color: #5c6472;
+}
+
+.cmdk-panel [cmdk-list] {
+  max-height: 340px;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.cmdk-panel [cmdk-group-heading] {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #5c6472;
+  padding: 10px 10px 4px;
+}
+
+.cmdk-panel [cmdk-item] {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: #9aa0ac;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.cmdk-panel [cmdk-item][data-selected="true"] {
+  background: rgba(0, 224, 255, 0.1);
+  color: #00e0ff;
+}
+.cmdk-panel [cmdk-item] svg {
+  flex-shrink: 0;
+}
+
+.cmdk-panel .cmdk-hint {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 500;
+  color: #5c6472;
+}
+
+.cmdk-panel [cmdk-empty] {
+  padding: 24px;
+  text-align: center;
+  color: #5c6472;
+  font-size: 14px;
+}

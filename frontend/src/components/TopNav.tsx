@@ -1,9 +1,12 @@
-import type { ReactNode } from "react"
 import { useEffect, useState } from "react"
+import type { CSSProperties, ReactNode } from "react"
 import { Link, useLocation } from "react-router-dom"
 import { motion } from "motion/react"
-import { Home, MessagesSquare, Hand, HeartHandshake, BarChart3 } from "lucide-react"
-import { COLORS, FONT, RADIUS, SHADOW, TAP_MIN } from "../theme"
+import { Home, MessagesSquare, Hand, HeartHandshake, BarChart3, Settings, Command as CommandIcon } from "lucide-react"
+import Pulse from "./ui/Pulse"
+import { tokens } from "../styles/tokens"
+
+export const NAV_HEIGHT = 56
 
 const LINKS = [
   { to: "/user", label: "User", icon: Home },
@@ -13,46 +16,22 @@ const LINKS = [
   { to: "/admin", label: "Admin", icon: BarChart3 },
 ]
 
-/** Online/offline indicator — green dot when online, yellow when offline. */
-function ConnectivityDot() {
-  const [online, setOnline] = useState(() => navigator.onLine)
-
-  useEffect(() => {
-    const goOnline = () => setOnline(true)
-    const goOffline = () => setOnline(false)
-    window.addEventListener("online", goOnline)
-    window.addEventListener("offline", goOffline)
-    return () => {
-      window.removeEventListener("online", goOnline)
-      window.removeEventListener("offline", goOffline)
-    }
-  }, [])
-
+/** Bridge + waveform logo, cyan→violet gradient. */
+export function VaakSetuLogo({ size = 26 }: { size?: number }) {
+  const id = "vsk"
   return (
-    <span
-      role="status"
-      aria-label={online ? "Online" : "Offline mode"}
-      title={online ? "Online" : "Offline mode"}
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        width: 34,
-        height: 34,
-        borderRadius: "50%",
-      }}
-    >
-      <motion.span
-        animate={{
-          backgroundColor: online ? "#10B981" : "#F59E0B",
-          boxShadow: online
-            ? "0 0 10px rgba(16, 185, 129, 0.7)"
-            : "0 0 10px rgba(245, 158, 11, 0.7)",
-        }}
-        transition={{ duration: 0.3 }}
-        style={{ width: 12, height: 12, borderRadius: "50%" }}
-      />
-    </span>
+    <svg width={size} height={size} viewBox="0 0 32 32" fill="none" aria-hidden="true">
+      <defs>
+        <linearGradient id={id} x1="2" y1="4" x2="30" y2="28" gradientUnits="userSpaceOnUse">
+          <stop stopColor={tokens.aurora.cyan} />
+          <stop offset="1" stopColor={tokens.aurora.violet} />
+        </linearGradient>
+      </defs>
+      {/* bridge deck + towers */}
+      <path d="M3 20h26M6 20v-8M26 20v-8M6 12c4-5 16-5 20 0" stroke={`url(#${id})`} strokeWidth="2.2" strokeLinecap="round" />
+      {/* waveform */}
+      <path d="M9 25v-3M13 26v-5M17 27v-7M21 26v-5M25 25v-3" stroke={`url(#${id})`} strokeWidth="2.2" strokeLinecap="round" />
+    </svg>
   )
 }
 
@@ -61,74 +40,71 @@ interface Props {
   right?: ReactNode
 }
 
-/** Sticky glassmorphism navigation shared by all dashboards. */
+const headerStyle: CSSProperties = {
+  position: "sticky",
+  top: 0,
+  zIndex: 40,
+  height: NAV_HEIGHT,
+  display: "flex",
+  alignItems: "center",
+  gap: 12,
+  padding: "0 16px",
+  background: "rgba(5,6,10,0.6)",
+  backdropFilter: "blur(20px) saturate(150%)",
+  WebkitBackdropFilter: "blur(20px) saturate(150%)",
+  borderBottom: `1px solid ${tokens.border.hairline}`,
+  fontFamily: "'Inter Display', system-ui, sans-serif",
+}
+
+/** Sticky aurora navigation shared by all dashboards. */
 export function TopNav({ right }: Props) {
   const { pathname } = useLocation()
+  const [avatarHover, setAvatarHover] = useState(false)
+
+  // Open the command palette on ⌘K / Ctrl+K.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() === "k" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault()
+        window.dispatchEvent(new CustomEvent("vaaksetu:command-palette"))
+      }
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [])
 
   return (
     <motion.header
-      initial={{ opacity: 0, y: -16 }}
+      initial={{ opacity: 0, y: -12 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, ease: "easeOut" }}
-      style={{
-        position: "sticky",
-        top: 0,
-        zIndex: 40,
-        display: "flex",
-        alignItems: "center",
-        gap: 12,
-        flexWrap: "wrap",
-        padding: "10px 16px",
-        background: "rgba(8, 9, 12, 0.78)",
-        backdropFilter: "blur(20px) saturate(160%)",
-        WebkitBackdropFilter: "blur(20px) saturate(160%)",
-        borderBottom: `1px solid ${COLORS.borderGlass}`,
-        boxShadow: SHADOW.sm,
-        fontFamily: FONT,
-      }}
+      transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+      style={headerStyle}
     >
       <Link
         to="/"
         aria-label="VaakSetu home — choose a role"
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 10,
-          textDecoration: "none",
-          color: COLORS.text,
-          minHeight: TAP_MIN,
-        }}
+        style={{ display: "inline-flex", alignItems: "center", gap: 9, textDecoration: "none", color: tokens.text.primary, minHeight: 40 }}
       >
+        <VaakSetuLogo />
+        <span style={{ fontSize: 15, fontWeight: 600, letterSpacing: 0.2 }}>VaakSetu</span>
         <span
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            width: 38,
-            height: 38,
-            borderRadius: RADIUS.md,
-            background: `linear-gradient(135deg, ${COLORS.accent}, ${COLORS.violet})`,
-            fontSize: 20,
-            boxShadow: "0 4px 14px rgba(0, 224, 255, 0.35)",
-          }}
           aria-hidden="true"
+          style={{
+            fontSize: 10,
+            fontWeight: 700,
+            textTransform: "uppercase",
+            letterSpacing: 0.8,
+            color: tokens.aurora.cyan,
+            border: `1px solid rgba(0,224,255,0.45)`,
+            borderRadius: 999,
+            padding: "1px 7px",
+          }}
         >
-          🗣️
-        </span>
-        <span style={{ fontSize: 18, fontWeight: 800, letterSpacing: 0.3 }}>
-          VaakSetu
+          v2.0
         </span>
       </Link>
 
-      <nav
-        aria-label="Primary"
-        style={{
-          display: "flex",
-          gap: 6,
-          flexWrap: "wrap",
-          marginLeft: 4,
-        }}
-      >
+      <nav aria-label="Primary" style={{ display: "flex", gap: 2, marginLeft: 8 }}>
         {LINKS.map(({ to, label, icon: Icon }) => {
           const active = pathname.startsWith(to)
           return (
@@ -137,47 +113,95 @@ export function TopNav({ right }: Props) {
               to={to}
               aria-current={active ? "page" : undefined}
               style={{
+                position: "relative",
                 display: "inline-flex",
                 alignItems: "center",
-                gap: 7,
-                minHeight: TAP_MIN,
-                padding: "8px 14px",
-                borderRadius: RADIUS.pill,
+                gap: 6,
+                minHeight: 36,
+                padding: "6px 12px",
+                borderRadius: 10,
                 textDecoration: "none",
-                fontSize: 14,
-                fontWeight: 700,
-                letterSpacing: 0.2,
-                color: active ? COLORS.accentBright : COLORS.textDim,
-                background: active ? COLORS.accentSoft : "transparent",
-                border: `1px solid ${active ? "rgba(0, 180, 216, 0.45)" : "transparent"}`,
-                transition:
-                  "color 0.18s ease, background 0.18s ease, border-color 0.18s ease, transform 0.18s ease",
-              }}
-              onMouseEnter={(e) => {
-                if (!active) e.currentTarget.style.color = COLORS.text
-              }}
-              onMouseLeave={(e) => {
-                if (!active) e.currentTarget.style.color = COLORS.textDim
+                fontSize: 13,
+                fontWeight: 600,
+                color: active ? tokens.aurora.cyan : tokens.text.secondary,
+                border: `1px solid ${active ? "rgba(0,224,255,0.35)" : "transparent"}`,
+                transition: "color 0.15s ease",
               }}
             >
-              <Icon size={16} strokeWidth={2.4} aria-hidden="true" />
-              {label}
+              {active && (
+                <motion.span
+                  layoutId="nav-pill"
+                  transition={tokens.spring.gentle}
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    borderRadius: 10,
+                    background: "rgba(0,224,255,0.1)",
+                  }}
+                />
+              )}
+              <Icon size={15} strokeWidth={2.4} aria-hidden="true" style={{ position: "relative" }} />
+              <span style={{ position: "relative" }}>{label}</span>
             </Link>
           )
         })}
       </nav>
 
-      <div
-        style={{
-          marginLeft: "auto",
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          flexWrap: "wrap",
-        }}
-      >
+      <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
         {right}
-        <ConnectivityDot />
+        <span title="All systems live" style={{ display: "inline-flex", alignItems: "center" }}>
+          <Pulse color="green" size={8} />
+        </span>
+        <span
+          aria-hidden="true"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 5,
+            fontSize: 11,
+            fontWeight: 600,
+            color: tokens.text.secondary,
+            background: tokens.bg.surface2,
+            border: `1px solid ${tokens.border.hairline}`,
+            borderRadius: 7,
+            padding: "3px 8px",
+            fontFamily: "'JetBrains Mono', monospace",
+          }}
+        >
+          <CommandIcon size={11} aria-hidden="true" /> K
+        </span>
+        <Link
+          to="/user"
+          aria-label="Settings"
+          style={{ display: "inline-flex", alignItems: "center", color: tokens.text.secondary, minHeight: 40 }}
+        >
+          <Settings size={16} strokeWidth={2.2} />
+        </Link>
+        <button
+          type="button"
+          aria-label="Account"
+          onMouseEnter={() => setAvatarHover(true)}
+          onMouseLeave={() => setAvatarHover(false)}
+          style={{
+            width: 28,
+            height: 28,
+            borderRadius: "50%",
+            cursor: "pointer",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 12,
+            fontWeight: 700,
+            color: "#000",
+            background: `linear-gradient(135deg, ${tokens.aurora.cyan}, ${tokens.aurora.violet})`,
+            border: "none",
+            padding: 0,
+            boxShadow: avatarHover ? `0 0 0 2px ${tokens.bg.base}, 0 0 0 3.5px ${tokens.aurora.cyan}` : "none",
+            transition: "box-shadow 0.2s ease",
+          }}
+        >
+          V
+        </button>
       </div>
     </motion.header>
   )

@@ -1,5 +1,7 @@
 import { motion, AnimatePresence } from "motion/react"
-import { COLORS, FONT, RADIUS, TAP_MIN } from "../theme"
+import { X } from "lucide-react"
+import { tokens } from "../styles/tokens"
+import { FONT } from "../theme"
 
 export interface Pictogram {
   id: string
@@ -43,63 +45,86 @@ export function PictogramGrid({ selected, onSelect, columns = 3, compact = false
       role="group"
       aria-label="Pictogram grid"
     >
-      {PICTOGRAMS.map((p) => {
+      {PICTOGRAMS.map((p, i) => {
         const isSelected = selected.some((s) => s.id === p.id)
         return (
           <motion.button
             key={p.id}
             type="button"
             onClick={() => onSelect(p)}
-            whileHover={{ y: -2 }}
-            whileTap={{ scale: 0.95 }}
-            animate={
-              isSelected
-                ? {
-                    scale: 1.02,
-                    boxShadow: `0 0 24px 4px ${COLORS.accentSoft}, 0 0 0 2px ${COLORS.accent}`,
-                  }
-                : {
-                    scale: 1,
-                    boxShadow:
-                      "0 4px 16px rgba(2, 8, 20, 0.3), 0 0 0 1px rgba(148,163,184,0.16)",
-                  }
-            }
-            transition={{ type: "spring", stiffness: 400, damping: 22 }}
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: i * 0.04, duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.94 }}
+            aria-pressed={isSelected}
+            aria-label={p.aria}
             style={{
+              position: "relative",
               display: "flex",
               flexDirection: "column",
               alignItems: "center",
               justifyContent: "center",
               gap: compact ? 4 : 8,
-              background: isSelected
-                ? "rgba(0, 180, 216, 0.14)"
-                : "rgba(30, 41, 59, 0.55)",
-              backdropFilter: "blur(20px) saturate(150%)",
-              WebkitBackdropFilter: "blur(20px) saturate(150%)",
-              color: COLORS.text,
-              border: isSelected
-                ? `2px solid ${COLORS.accent}`
-                : "2px solid rgba(148, 163, 184, 0.14)",
-              borderRadius: compact ? RADIUS.md : 18,
-              minHeight: compact ? 78 : 110,
+              height: compact ? 84 : 160,
               padding: compact ? 8 : 12,
               cursor: "pointer",
               WebkitTapHighlightColor: "transparent",
               touchAction: "manipulation",
               fontFamily: FONT,
+              color: tokens.text.primary,
+              background: isSelected ? "rgba(0,224,255,0.07)" : "rgba(10,12,18,0.6)",
+              backdropFilter: "blur(20px)",
+              WebkitBackdropFilter: "blur(20px)",
+              border: `1px solid ${isSelected ? "rgba(0,224,255,0.6)" : tokens.border.hairline}`,
+              borderRadius: compact ? 14 : 20,
+              boxShadow: isSelected
+                ? `0 0 24px rgba(0,224,255,0.18), inset 0 0 18px rgba(0,224,255,0.06)`
+                : "0 4px 16px rgba(0,0,0,0.35)",
             }}
-            aria-pressed={isSelected}
-            aria-label={p.aria}
           >
+            {/* hover gradient border (hidden until :hover via group) */}
             <span
-              style={{ fontSize: compact ? 28 : 44, lineHeight: 1 }}
               aria-hidden="true"
-            >
+              className="picto-gradient-ring"
+              style={{ position: "absolute", inset: 0, borderRadius: "inherit", padding: 1, pointerEvents: "none", opacity: 0, transition: "opacity 0.2s ease",
+                background: `linear-gradient(135deg, ${tokens.aurora.cyan}, ${tokens.aurora.violet}, ${tokens.aurora.magenta})`,
+                WebkitMask: "linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)",
+                WebkitMaskComposite: "xor",
+                maskComposite: "exclude",
+              }}
+            />
+            <span style={{ fontSize: compact ? 28 : 56, lineHeight: 1 }} aria-hidden="true">
               {p.emoji}
             </span>
-            <span style={{ fontSize: compact ? 14 : 19, fontWeight: 700 }}>
+            <span style={{ fontSize: compact ? 14 : 15, fontWeight: 600, color: isSelected ? tokens.aurora.cyan : tokens.text.secondary }}>
               {p.label}
             </span>
+
+            {isSelected && (
+              <motion.span
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                aria-hidden="true"
+                style={{
+                  position: "absolute",
+                  top: 8,
+                  right: 8,
+                  width: 20,
+                  height: 20,
+                  borderRadius: "50%",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: `linear-gradient(135deg, ${tokens.aurora.cyan}, ${tokens.aurora.violet})`,
+                  color: "#000",
+                  fontSize: 12,
+                  fontWeight: 800,
+                }}
+              >
+                ✓
+              </motion.span>
+            )}
           </motion.button>
         )
       })}
@@ -107,12 +132,15 @@ export function PictogramGrid({ selected, onSelect, columns = 3, compact = false
   )
 }
 
-/** Animated selection chips shown above the grid. */
+/** Animated selection chips shown above the grid — with remove buttons. */
 export function SelectionChips({
   selected,
+  onRemove,
   max = MAX_SELECTION,
 }: {
   selected: Pictogram[]
+  /** Optional remove handler; renders ✕ buttons when provided. */
+  onRemove?: (p: Pictogram) => void
   max?: number
 }) {
   return (
@@ -130,23 +158,46 @@ export function SelectionChips({
               display: "inline-flex",
               alignItems: "center",
               gap: 6,
-              background: COLORS.accentSoft,
-              color: COLORS.text,
-              border: `1px solid ${COLORS.accent}`,
-              borderRadius: RADIUS.pill,
-              padding: "8px 14px",
-              fontSize: 18,
+              background: "rgba(0,224,255,0.09)",
+              color: tokens.text.primary,
+              border: "1px solid rgba(0,224,255,0.45)",
+              borderRadius: 999,
+              padding: onRemove ? "5px 7px 5px 13px" : "8px 14px",
+              fontSize: 17,
               fontWeight: 700,
               whiteSpace: "nowrap",
               fontFamily: FONT,
             }}
           >
             <span aria-hidden="true">{s.emoji}</span> {s.label}
+            {onRemove && (
+              <button
+                type="button"
+                onClick={() => onRemove(s)}
+                aria-label={`Remove ${s.label} from the sentence`}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: 24,
+                  height: 24,
+                  minHeight: 24,
+                  borderRadius: "50%",
+                  border: "none",
+                  cursor: "pointer",
+                  background: "rgba(255,255,255,0.08)",
+                  color: tokens.text.secondary,
+                  padding: 0,
+                }}
+              >
+                <X size={13} strokeWidth={2.6} aria-hidden="true" />
+              </button>
+            )}
           </motion.span>
         ))}
       </AnimatePresence>
       {selected.length === 0 && (
-        <span style={{ color: COLORS.textDim, fontSize: 16, fontWeight: 500 }}>
+        <span style={{ color: tokens.text.secondary, fontSize: 15, fontWeight: 500 }}>
           Tap {max} pictograms below…
         </span>
       )}
@@ -157,9 +208,9 @@ export function SelectionChips({
             key={`slot-${i}`}
             aria-hidden="true"
             style={{
-              color: COLORS.textDim,
-              border: `1px dashed ${COLORS.border}`,
-              borderRadius: RADIUS.pill,
+              color: tokens.text.tertiary,
+              border: `1px dashed ${tokens.border.strong}`,
+              borderRadius: 999,
               padding: "8px 14px",
               fontSize: 14,
               letterSpacing: 2,
@@ -171,5 +222,3 @@ export function SelectionChips({
     </div>
   )
 }
-
-export { TAP_MIN }
