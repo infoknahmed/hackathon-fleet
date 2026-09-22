@@ -16,3 +16,6 @@ venv/
 
 # Runtime SQLite data
 backend/data/
+
+# SQLite runtime files
+backend/data/
