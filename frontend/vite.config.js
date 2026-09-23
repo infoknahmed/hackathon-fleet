@@ -22,7 +22,7 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,woff2,json,bin,task,wasm}'],
+        globPatterns: ['**/*.{js,css,html,svg,png,woff2,json}'],
         maximumFileSizeToCacheInBytes: 8000000,
         runtimeCaching: [
           {
@@ -42,6 +42,17 @@ export default defineConfig({
             options: {
               cacheName: 'vaaksetu-vision-models',
               expiration: { maxEntries: 30, maxAgeSeconds: 86400 * 30 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+          {
+            // On-device AI libraries (web-llm, transformers.js) + weights — cache-first.
+            // Downloaded once, then available offline.
+            urlPattern: /esm\.sh|huggingface\.co|hf\.co/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'vaaksetu-ai-models',
+              expiration: { maxEntries: 60, maxAgeSeconds: 86400 * 60 },
               cacheableResponse: { statuses: [0, 200] },
             },
           },

@@ -19,6 +19,8 @@ import {
 import { PictogramGrid, SelectionChips } from "../components/PictogramGrid"
 import type { Pictogram } from "../components/PictogramGrid"
 import { predictSentence, recordCorrection, recordPhraseUsed } from "../lib/predict"
+import { predictIntent, onLlmStatus, hasWebGPU, preloadLlm } from "../lib/ai/intentPredictor"
+import type { LlmStatus } from "../lib/ai/intentPredictor"
 import {
   sendMessage,
   subscribeToMessages,
@@ -104,6 +106,21 @@ export default function UserDashboard() {
   )
   const [a11y, setA11y] = useState<A11ySettings>(() => loadA11ySettings())
   const [alternatives, setAlternatives] = useState<string[]>([])
+  const [llmStatus, setLlmStatus] = useState<LlmStatus>("idle")
+  const [sentenceLayer, setSentenceLayer] = useState<"rules" | "llm">("rules")
+  const [pendingRefine, setPendingRefine] = useState(false)
+
+  // Track the on-device LLM status for the 🧠 badge.
+  const [llmPct, setLlmPct] = useState(0)
+  useEffect(() => {
+    if (!hasWebGPU()) return
+    const unsub = onLlmStatus((s, pct) => {
+      setLlmStatus(s)
+      setLlmPct(pct)
+      if (s === "idle") preloadLlm()
+    })
+    return unsub
+  }, [])
   const replyTimerRef = useRef<number | null>(null)
 
   const isFull = selected.length >= MAX_SELECTION
@@ -203,10 +220,12 @@ export default function UserDashboard() {
   }
 
   const handleSpeak = () => {
-    const result = predictSentence(selected.map((s) => s.label), {
+    const words = selected.map((s) => s.label)
+    const result = predictSentence(words, {
       lastMood: history[0]?.type === "message" ? history[0].mood : undefined,
     })
     setSentence(result.text)
+    setSentenceLayer("rules")
     setTranslatedText(speakSentence(result.text) ?? "")
     recordPhraseUsed(result.text)
     // Low confidence → offer alternatives instead of silently speaking.
@@ -214,6 +233,22 @@ export default function UserDashboard() {
       setAlternatives(result.alternatives)
     } else {
       setAlternatives([])
+    }
+
+    // Layer 2: when the on-device LLM is ready, refine the sentence in the
+    // background and upgrade what's shown (badge switches to 🧠).
+    if (llmStatus === "ready" && !pendingRefine) {
+      setPendingRefine(true)
+      void predictIntent(words, { rulesOnly: false })
+        .then((r) => {
+          if (r.layer === "llm") {
+            setSentence(r.text)
+            setSentenceLayer("llm")
+            announce("Sentence refined by on-device AI")
+          }
+        })
+        .catch(() => undefined)
+        .finally(() => setPendingRefine(false))
     }
 
     publish({
@@ -529,9 +564,35 @@ export default function UserDashboard() {
               >
                 {sentence ? (
                   <div>
-                    <p style={{ margin: 0, fontSize: 26, fontWeight: 700, lineHeight: 1.35 }}>
-                      {sentence}
-                    </p>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                      <p style={{ margin: 0, fontSize: 26, fontWeight: 700, lineHeight: 1.35 }}>
+                        {sentence}
+                      </p>
+                      {llmStatus === "ready" && sentenceLayer === "llm" && (
+                        <span
+                          title="Sentence refined by the on-device AI model"
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 800,
+                            color: COLORS.violet,
+                            border: `1px solid ${COLORS.violet}`,
+                            borderRadius: RADIUS.pill,
+                            padding: "2px 8px",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          🧠 On-device AI
+                        </span>
+                      )}
+                      {llmStatus === "loading" && (
+                        <span
+                          title="Downloading the on-device AI model (one time, cached afterwards)"
+                          style={{ fontSize: 11, fontWeight: 800, color: COLORS.textDim, border: `1px dashed ${COLORS.borderGlass}`, borderRadius: RADIUS.pill, padding: "2px 8px", whiteSpace: "nowrap" }}
+                        >
+                          {`🧠 Loading AI ${llmPct}%`}
+                        </span>
+                      )}
+                    </div>
                     {translatedText && (
                       <p
                         style={{

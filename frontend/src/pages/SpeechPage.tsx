@@ -16,6 +16,7 @@ import { sendMessage } from "../lib/messageBus"
 import { cacheMessage, enqueueMessage, isOnline } from "../lib/offline"
 import { COLORS, FONT, RADIUS, SHADOW, TAP_MIN } from "../theme"
 import TopNav from "../components/TopNav"
+import { onSpeechModelStatus, tryOfflineTranscribe } from "../lib/ai/offlineSpeech"
 
 const BCP47: Record<string, string> = {
   en: "en-IN",
@@ -78,6 +79,18 @@ export default function SpeechPage() {
   const [interim, setInterim] = useState("")
   const [entries, setEntries] = useState<TranscriptEntry[]>([])
   const [error, setError] = useState<string | null>(null)
+  // Offline Whisper model state ("idle" | "loading" | "ready" | "error").
+  const [offlineStt, setOfflineStt] = useState<string>("idle")
+  const [offlinePct, setOfflinePct] = useState(0)
+  useEffect(() => onSpeechModelStatus((s) => {
+    setOfflineStt(s.stt)
+    if (s.stt === "loading") return
+  }), [])
+  useEffect(() => {
+    if (offlineStt !== "loading") return
+    const t = window.setInterval(() => setOfflinePct((p) => Math.min(p + 7, 95)), 700)
+    return () => window.clearInterval(t)
+  }, [offlineStt])
   const [micLevel, setMicLevel] = useState(0)
   const [noisy, setNoisy] = useState(false)
   const [speechActive, setSpeechActive] = useState(false)
@@ -128,6 +141,57 @@ export default function SpeechPage() {
     setMicLevel(0)
     setNoisy(false)
     setSpeechActive(false)
+  }, [])
+
+  // ── Offline fallback (Phase 2B): MediaRecorder → on-device Whisper ──
+  const [offlineMode, setOfflineMode] = useState(false)
+  const recorderRef = useRef<MediaRecorder | null>(null)
+  const chunksRef = useRef<Blob[]>([])
+
+  /** Record until stopped, then transcribe fully on-device. */
+  const startOfflineRecording = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mime = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : ""
+      const recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream)
+      chunksRef.current = []
+      recorder.ondataavailable = (e) => e.data.size > 0 && chunksRef.current.push(e.data)
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop())
+        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" })
+        setListening(false)
+        if (blob.size < 2000) return // silence guard
+        const text = await tryOfflineTranscribe(blob)
+        if (text) {
+          const id = `off-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+          setEntries((prev) => [
+            { id, text, lang: langRef.current, confidence: 0.75, timestamp: Date.now() },
+            ...prev,
+          ])
+          persistTranscript(text, 0.75)
+          playSuccess()
+          announce(`Transcribed offline: ${text}`)
+        } else {
+          setError("Offline transcription unavailable — reconnect and press Retry.")
+          playError()
+        }
+        setListening(false)
+      }
+      recorderRef.current = recorder
+      recorder.start()
+      setListening(true)
+      announce("Offline recording — press the mic to stop and transcribe")
+    } catch {
+      setError("Microphone unavailable for offline capture.")
+      setListening(false)
+      playError()
+    }
+  }, [persistTranscript])
+
+  const stopOfflineRecording = useCallback(() => {
+    if (recorderRef.current && recorderRef.current.state !== "inactive") {
+      recorderRef.current.stop()
+    }
   }, [])
 
   const buildRecognition = useCallback((): SpeechRecognitionLike | null => {
@@ -187,11 +251,12 @@ export default function SpeechPage() {
         stopNoiseMonitoring()
         playError()
       } else if (e.error === "network") {
-        setError("Speech service unreachable — check your connection, then press Retry.")
-        wantListeningRef.current = false
-        setListening(false)
+        // Offline fallback: switch to on-device Whisper (Phase 2).
+        setOfflineMode(true)
+        setError(null)
+        announce("Network unavailable — switching to offline speech recognition")
         stopNoiseMonitoring()
-        playError()
+        void startOfflineRecording()
       } else if (e.error === "no-speech") {
         // Chrome ends the session on silence — restart if the user still wants it.
       } else if (e.error !== "aborted") {
@@ -221,9 +286,18 @@ export default function SpeechPage() {
   const startListening = () => {
     if (listening) return
     setError(null)
+    if (offlineMode) {
+      void startOfflineRecording()
+      return
+    }
     wantListeningRef.current = true
     const recognition = buildRecognition()
-    if (!recognition) return
+    if (!recognition) {
+      // No Web Speech API at all — go straight to offline capture.
+      setOfflineMode(true)
+      void startOfflineRecording()
+      return
+    }
     recognitionRef.current = recognition
     try {
       recognition.start()
@@ -240,6 +314,10 @@ export default function SpeechPage() {
 
   const stopListening = () => {
     wantListeningRef.current = false
+    if (offlineMode) {
+      stopOfflineRecording()
+      return
+    }
     recognitionRef.current?.stop()
     announce("Mic stopped")
   }
@@ -280,6 +358,37 @@ export default function SpeechPage() {
           <p style={{ margin: "4px 0 0", fontSize: 15, color: COLORS.textDim }}>
             Continuous live transcription with confidence scoring and noise monitoring.
           </p>
+          <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }} role="status">
+            {offlineMode && (
+              <span
+                title="Transcribing on this device with Whisper — no internet needed"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  fontSize: 12,
+                  fontWeight: 800,
+                  color: COLORS.warning,
+                  background: "rgba(250, 204, 21, 0.12)",
+                  border: `1px solid ${COLORS.warning}`,
+                  borderRadius: RADIUS.pill,
+                  padding: "3px 10px",
+                }}
+              >
+                ⚡ Offline AI active
+              </span>
+            )}
+            {offlineStt === "loading" && (
+              <span style={{ fontSize: 12, fontWeight: 800, color: COLORS.textDim, border: `1px dashed ${COLORS.borderGlass}`, borderRadius: RADIUS.pill, padding: "3px 10px" }}>
+                {`⬇ Downloading offline model ${offlinePct}%`}
+              </span>
+            )}
+            {offlineStt === "ready" && !offlineMode && (
+              <span style={{ fontSize: 12, fontWeight: 800, color: COLORS.success, border: `1px solid ${COLORS.success}`, borderRadius: RADIUS.pill, padding: "3px 10px" }}>
+                ✓ Offline model ready
+              </span>
+            )}
+          </div>
         </header>
 
         {!supported && (
