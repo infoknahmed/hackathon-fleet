@@ -226,6 +226,29 @@ export const WORD_SIGNS: Record<string, SignPose> = {
   play: two({ x: 0.5, y: 0.0, rot: -20, fingers: { curl: [0.3, 0.5, 0.5, 0.5, 0.5] } }, { x: -0.5, y: 0.0, rot: 20, fingers: { curl: [0.3, 0.5, 0.5, 0.5, 0.5] } }, "happy", 560),
 }
 
+/** Extra one-off word signs used by phrases (merged into lookup). */
+export const EXTRA_WORD_SIGNS: Record<string, SignPose> = {
+  how: two({ x: 0.45, y: 0.1, rot: 8, fingers: { curl: [0.45, 0.5, 0.5, 0.5, 0.5] } }, { x: -0.45, y: 0.1, rot: -8, fingers: { curl: [0.45, 0.5, 0.5, 0.5, 0.5] } }, "question", 560),
+  are: two(p(0.35, 0.05, FLAT), restHand(), "neutral", 380),
+  am: two(p(0.35, 0.05, FLAT), restHand(), "neutral", 380),
+  is: two(p(0.35, 0.05, FLAT), restHand(), "neutral", 380),
+  in: two({ x: 0.35, y: 0.05, fingers: { curl: [0.5, 0.5, 0.5, 0.5, 0.5] } }, restHand(), "neutral", 420),
+  to: two(p(0.45, 0.0, [1, 0.6, 1, 1, 1]), restHand(), "neutral", 380),
+  the: two(p(0.35, 0.0, FLAT), restHand(), "neutral", 360),
+  a: p(0.62, 0.05, [0.25, 1, 1, 1, 1]),
+  have: two({ x: 0.45, y: 0.05, rot: -10, fingers: { curl: CURLED } }, restHand(), "neutral", 460),
+  call: two({ x: 0.5, y: 0.25, rot: -10, fingers: { curl: [1, 0, 1, 1, 1] } }, restHand(), "neutral", 500),
+  where: two({ x: 0.4, y: 0.25, rot: -15, fingers: { curl: [1, 0.12, 0.12, 1, 1] } }, restHand(), "question", 520),
+  not: two({ x: 0.4, y: 0.1, rot: -12, fingers: { curl: [1, 0.3, 0.3, 0.3, 0.3] } }, restHand(), "sad", 460),
+  do: two(p(0.4, -0.05, [1, 0.6, 1, 1, 1]), restHand(), "neutral", 420),
+  understand: two(p(0.5, 0.6, [1, 0, 1, 1, 1]), restHand(), "question", 520),
+  morning: two({ x: 0.4, y: 0.15, rot: 25, fingers: { curl: FLAT } }, { x: -0.4, y: 0.15, rot: -25, fingers: { curl: FLAT } }, "happy", 520),
+  very: two(p(0.3, 0.05, FLAT_SPREAD, { spread: 0.9 }), restHand(), "neutral", 420),
+  much: two({ x: 0.5, y: -0.1, fingers: { curl: [0.4, 0.5, 0.5, 0.5, 0.5] } }, restHand(), "neutral", 460),
+  thank: two(p(0.5, 0.35, FLAT), restHand(), "happy", 520),
+}
+
+
 /* ── Phrases — each is a full avatar sequence ──────────────────── */
 
 export interface PhraseSequence {
@@ -270,28 +293,6 @@ export const PHRASES: Record<string, PhraseSequence> = {
   "my name is": phrase("my-name-is", ["my", "name", "is"], "happy", true),
   "how are you": phrase("how-are-you", ["how", "are", "you"], "question", true),
   "i do not understand": phrase("i-not-understand", ["i", "do", "not", "understand"], "question", true),
-}
-
-/** Extra one-off word signs used by phrases (merged into lookup). */
-export const EXTRA_WORD_SIGNS: Record<string, SignPose> = {
-  how: two({ x: 0.45, y: 0.1, rot: 8, fingers: { curl: [0.45, 0.5, 0.5, 0.5, 0.5] } }, { x: -0.45, y: 0.1, rot: -8, fingers: { curl: [0.45, 0.5, 0.5, 0.5, 0.5] } }, "question", 560),
-  are: two(p(0.35, 0.05, FLAT), restHand(), "neutral", 380),
-  am: two(p(0.35, 0.05, FLAT), restHand(), "neutral", 380),
-  is: two(p(0.35, 0.05, FLAT), restHand(), "neutral", 380),
-  in: two({ x: 0.35, y: 0.05, fingers: { curl: [0.5, 0.5, 0.5, 0.5, 0.5] } }, restHand(), "neutral", 420),
-  to: two(p(0.45, 0.0, [1, 0.6, 1, 1, 1]), restHand(), "neutral", 380),
-  the: two(p(0.35, 0.0, FLAT), restHand(), "neutral", 360),
-  a: p(0.62, 0.05, [0.25, 1, 1, 1, 1]),
-  have: two({ x: 0.45, y: 0.05, rot: -10, fingers: { curl: CURLED } }, restHand(), "neutral", 460),
-  call: two({ x: 0.5, y: 0.25, rot: -10, fingers: { curl: [1, 0, 1, 1, 1] } }, restHand(), "neutral", 500),
-  where: two({ x: 0.4, y: 0.25, rot: -15, fingers: { curl: [1, 0.12, 0.12, 1, 1] } }, restHand(), "question", 520),
-  not: two({ x: 0.4, y: 0.1, rot: -12, fingers: { curl: [1, 0.3, 0.3, 0.3, 0.3] } }, restHand(), "sad", 460),
-  do: two(p(0.4, -0.05, [1, 0.6, 1, 1, 1]), restHand(), "neutral", 420),
-  understand: two(p(0.5, 0.6, [1, 0, 1, 1, 1]), restHand(), "question", 520),
-  morning: two({ x: 0.4, y: 0.15, rot: 25, fingers: { curl: FLAT } }, { x: -0.4, y: 0.15, rot: -25, fingers: { curl: FLAT } }, "happy", 520),
-  very: two(p(0.3, 0.05, FLAT_SPREAD, { spread: 0.9 }), restHand(), "neutral", 420),
-  much: two({ x: 0.5, y: -0.1, fingers: { curl: [0.4, 0.5, 0.5, 0.5, 0.5] } }, restHand(), "neutral", 460),
-  thank: two(p(0.5, 0.35, FLAT), restHand(), "happy", 520),
 }
 
 /* ── Emotion overlays (for sentiment-driven expression) ────────── */
