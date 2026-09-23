@@ -1,33 +1,39 @@
+# Dependencies
 node_modules/
-.hackit/_prompt_*
+
+# Build outputs
 dist/
 build/
+frontend/dist/
+.vercel-stage/
+frontend/.vercel-stage/
+.vercel/
+
+# Environment
 .env
 .env.*
 *.tsbuildinfo
-data/*.db
+
+# Runtime data (SQLite)
+backend/data/
+*.db
+*.db-shm
+*.db-wal
+
+# Logs
+*.log
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Python (data-collection tooling)
 __pycache__/
 *.pyc
 venv/
 .venv/
-*.log
-.DS_Store
+
+# Tooling / local agent state
+.hackit/_prompt_*
 .multifleet/
-
-# Runtime SQLite data
-backend/data/
-
-# SQLite runtime files
-backend/data/
-
 .freebuff/
-
-.vercel-stage/
-
-frontend/.vercel-stage/
-
-.freebuff/
-
-.vercel-stage/
-
-frontend/.vercel-stage/

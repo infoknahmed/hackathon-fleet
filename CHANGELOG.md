@@ -3,6 +3,7 @@
 All notable changes to VaakSetu are documented here.
 
 ## v2.0.0 — 2026-09-24
+### Phases 1–5 (avatar, on-device AI, voice clone, continuous ISL, bidirectional)
 
 ### Phase 5: Bidirectional Avatar Conversation (`47cf3c6`)
 - **NEW** `/avatar-talk` route — three-panel interpreter layout:
@@ -46,3 +47,22 @@ All notable changes to VaakSetu are documented here.
 - 100+ pose library: fingerspelling alphabet, numbers, 60+ word signs, 20 phrases.
 - Sentence → sign sequencer with longest-phrase matching and fingerspelling fallback.
 - `/text-to-sign` player with progress, speed, replay, and WebM clip export.
+
+## v1.0.0 — 2026-09-21
+### 12 HT-02 Core Features (`ce3ab3c`)
+- Speech → Text and Text → Speech with 5 Indian languages and per-language
+  voice selection + romanized fallbacks.
+- Camera sign recognition: 20+ static gestures and 5 dynamic gestures
+  (MediaPipe HandLandmarker, hold-to-accept with confidence ring).
+- Animated sign avatar playback (`/text-to-sign`) with WebM clip export.
+- Real-time two-way conversation (pictograms ↔ voice) over Socket.IO with
+  SQLite persistence, delivery/read receipts, and typing indicators.
+- Guardian dashboard (live feed, emergency alerts, demo mode), admin analytics
+  (stats + 7-day timeline), database viewer, and per-user history.
+- Noise gate with VAD (VOICE vs noise), noisy-environment warnings, ASR
+  confidence badges, and low-confidence "Did you mean?" alternatives that
+  train the rule-based predictor.
+- Accessible UI: ARIA live regions, keyboard shortcuts (⌘K command palette),
+  audio/visual feedback, reduced-motion support.
+- Offline-first PWA: installable, message outbox with background sync,
+  runtime-cached model assets.

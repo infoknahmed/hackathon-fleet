@@ -1,7 +1,12 @@
 ﻿{
-    "name":  "backend",
-    "version":  "1.0.0",
-    "description":  "API Server",
+    "name":  "vaaksetu-backend",
+    "version":  "2.0.0",
+    "description":  "VaakSetu API server — Express + Socket.IO + SQLite",
+    "author":  "infoknahmed",
+    "homepage":  "https://vaaksetu.vercel.app",
+    "repository":  "https://github.com/infoknahmed/vaaksetu",
+    "keywords":  ["aac", "assistive-tech", "accessibility", "sign-language", "realtime", "websocket"],
+    "license":  "MIT",
     "main":  "server.js",
     "scripts":  {
                     "start":  "node server.js",

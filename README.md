@@ -1,66 +1,204 @@
-# VaakSetu — Bridge of Voice
+# VaakSetu 🎭
 
-VaakSetu is an accessibility platform connecting deaf, mute, and non-verbal users with
-hearing people — a two-way bridge: **voice → sign avatar** and **signs → voice**, with
-an on-device AI core that keeps everything private and offline-capable.
+### The Bridge of Voice — An AI-powered AAC platform for non-verbal users
 
-## Phases Completed
+[Live Demo](https://vaaksetu.vercel.app) · [Report Bug](https://github.com/infoknahmed/vaaksetu/issues) · [Request Feature](https://github.com/infoknahmed/vaaksetu/issues)
 
-- **Phase 1: Avatar System** (commit `13f3000`) — parametric 2D SVG signing avatar
-  (two-bone IK arms, jointed fingers, facial expressions, breathing/blink idle life),
-  100+ pose library (fingerspelling alphabet, numbers, 60+ word signs, phrases),
-  sentence → sign sequencer with fingerspelling fallback, `/text-to-sign` player with
-  clip export.
-- **Phase 2: On-Device AI** (commit `9a94197`) — two-layer intent prediction
-  (instant rules + WebLLM Qwen2.5-0.5B via WebGPU in a worker, weights cached in
-  IndexedDB) and offline speech (Whisper-tiny STT + SpeechT5 TTS in a worker) with
-  graceful degradation.
-- **Phase 3: Voice Cloning** (commit `8076be1`) — record 3 samples in-browser,
-  AES-GCM-encrypted storage in IndexedDB, XTTS-v2 server clone when configured with
-  automatic local pitch-matched TTS fallback, `/voice-setup` wizard.
-- **Phase 4: Continuous ISL** (commit `c6dcfc2`) — 2-second rolling-window continuous
-  sign recognition (motion-energy segmentation → ONNX model or DTW against motion
-  templates), sentence chips on `/sign`, and a volunteer data-collection tool
-  (`backend/scripts/collect-isl-data.js`) for training the model.
-- **Phase 5: Bidirectional Avatar** (commit `47cf3c6`) — `/avatar-talk` three-panel
-  interpreter: hearing person speaks → avatar signs; deaf person signs (continuous
-  ISL) → avatar speaks (cloned voice when enabled). Avatar state machine
-  (idle / listening / signing / speaking) with emotion-aware facial expressions,
-  shared chat history, and group mode with QR-code join rooms via Socket.IO.
+---
 
-## Architecture
+## 🌟 What is VaakSetu?
 
-```
-frontend/  React 18 + Vite + TypeScript, motion, Tailwind-free glass design system
-           PWA (vite-plugin-pwa) with runtime caching for AI models
-backend/   Express + Socket.IO + SQLite (node:sqlite, zero native deps)
-           Render-deployable (render.yaml)
-```
+Over **7 million Indians** live with speech and language impairments — cerebral palsy,
+ALS, stroke recovery, non-verbal autism, locked-in syndrome. For most of them, the
+only way to "speak" is a dedicated AAC device that costs **₹5,00,000+** and is
+out of reach for the vast majority of families. Communication — the most basic
+human right — becomes a privilege of wealth.
 
-## Run
+**VaakSetu** (Sanskrit: *voice bridge*) is a free, web-based alternative that turns
+any ₹10,000 smartphone or laptop into a full communication system. It works in both
+directions: spoken words become animated sign language on screen, and hand signs
+become spoken words through the device. Everything that can run on-device **does**
+run on-device — the AI models, the sign recognition, even the user's cloned voice —
+so it keeps working offline and never uploads sensitive voice or video data.
 
-```bash
-# Backend (terminal 1)
-cd backend && npm install && npm start        # :3001
+The result is not a chat app with buttons bolted on. It's a living interpreter: an
+expressive 2D avatar that listens, signs, and speaks with facial emotion — built to
+let a deaf person and a hearing person who shares no common language *hold a
+conversation*.
 
-# Frontend (terminal 2)
-cd frontend && npm install && npm run dev     # :5173, /api + /socket.io proxied
-```
+## ✨ Features
 
-### Key routes
+### Core (HT-02 Requirements)
 
-| Route | Purpose |
+- 🎤 **Speech → Text** — live transcription with confidence badges and alternatives
+- 🔊 **Text → Speech** — 5 Indian languages (English, हिन्दी, ಕನ್ನಡ, తెలుగు, தமிழ்)
+- ✋ **Sign Language → Text/Speech** — camera-based recognition via MediaPipe Hands
+- 🧑‍🏫 **Text → Sign Language** — animated avatar playback
+- 💬 **Real-time two-way conversation** — Socket.IO powered, cross-device
+- 🤟 **20+ common sign gestures** — static + dynamic (motion) gestures
+- 📝 **Phrase recognition** — multi-gesture sentence building
+- 🌐 **Multi-language voice** — 5 Indian languages with graceful fallbacks
+- 🕘 **Conversation history** — persisted + offline-queued
+- ♿ **Accessible UI** — ARIA live regions, keyboard shortcuts, audio/visual feedback
+- 🔇 **Noise handling** — noise gate, SNR meter, "noisy environment" warnings
+- 📶 **Offline PWA** — installable, works offline, syncs when reconnected
+
+### Advanced (v2.0)
+
+- 🎭 **Animated 2D SVG signing avatar** — 100+ poses, IK-rigged arms, jointed
+  fingers, 10 facial expressions, breathing/blink idle life
+- 🧠 **On-device AI** — WebLLM (Qwen2.5-0.5B via WebGPU) for intent prediction,
+  Whisper-tiny for offline speech-to-text; weights cached in IndexedDB
+- 🎤 **Voice cloning** — record 3 sentences, AES-GCM encrypted on-device, the
+  avatar speaks in *your* voice (XTTS-v2 server or pitch-matched local fallback)
+- 📹 **Continuous ISL recognition** — 2-second rolling-window classification of
+  full sign sentences, not just single gestures
+- 🗣️ **Bidirectional avatar conversation** — a stateful avatar interpreter
+  (listening → signing → speaking) with emotion-aware facial expressions and
+  group mode via QR-code rooms
+
+## 🖼️ Screenshots
+
+| | |
 |---|---|
-| `/user` | Pictogram AAC dashboard with on-device intent prediction |
-| `/conversation` | Two-panel pictogram ↔ voice conversation |
-| `/avatar-talk` | Bidirectional avatar conversation (1-on-1 or group via QR) |
-| `/sign` | Camera-based ISL recognition (static, dynamic, continuous) |
-| `/text-to-sign` | Text → signing avatar player |
-| `/voice-setup` | Voice cloning wizard |
-| `/speech` | Offline STT/TTS playground |
+| ![Landing](docs/screenshots/landing.png) | ![Avatar Talk](docs/screenshots/avatar-talk.png) |
+| *Role selection* | *Bidirectional avatar conversation* |
+| ![User Dashboard](docs/screenshots/user-dashboard.png) | ![Text to Sign](docs/screenshots/text-to-sign.png) |
+| *Pictogram AAC dashboard* | *Animated signing avatar* |
+| ![Sign Language](docs/screenshots/sign-language.png) | ![Voice Setup](docs/screenshots/voice-setup.png) |
+| *Continuous ISL recognition* | *Voice cloning wizard* |
 
-### Build
+## 🏗️ Architecture
+
+```mermaid
+flowchart LR
+    subgraph Browser["Browser (on-device, privacy-first)"]
+        UI["React 18 + Vite SPA"]
+        subgraph AI["On-device AI (Web Workers)"]
+            WLLM["WebLLM<br/>Qwen2.5-0.5B (WebGPU)"]
+            WHISPER["Whisper-tiny<br/>(Transformers.js)"]
+            MP["MediaPipe Hands<br/>(WASM + GPU)"]
+        end
+        AV["Signing Avatar<br/>SVG + IK rig"]
+        SW["PWA Service Worker<br/>(Workbox)"]
+    end
+
+    subgraph Server["Backend (Express + SQLite)"]
+        API["REST API"]
+        SIO["Socket.IO hub"]
+        DB[("SQLite<br/>WAL mode")]
+    end
+
+    UI <-->|"Web Speech API"| UI
+    MP -->|"21 hand landmarks"| UI
+    WLLM --> UI
+    WHISPER --> UI
+    UI <-->|"signs / speaks"| AV
+    UI <-->|"REST /api/*"| API
+    UI <-->|"realtime messages"| SIO
+    API --> DB
+    SIO --> DB
+```
+
+**Real-time flow (hearing → deaf):** mic → `webkitSpeechRecognition` transcript →
+Socket.IO room broadcast → avatar state machine flips to *signing* → sequencer
+converts the sentence to poses → the deaf user watches the avatar sign.
+**Deaf → hearing:** MediaPipe hand landmarks → continuous recognizer → sentence →
+TTS (cloned voice when enabled) → the hearing person hears it.
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for component tree, Socket.IO
+events, DB schema, and AI model loading strategy.
+
+## 🚀 Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | React 18, Vite 5, TypeScript, Motion, React Router 7 |
+| Styling | Custom design system (aurora gradients + glassmorphism) |
+| Real-time | Socket.IO |
+| Backend | Node.js 18+, Express, SQLite (`node:sqlite`, zero native deps) |
+| AI/ML | MediaPipe (Hands), WebLLM, Transformers.js, XTTS-v2 (Replicate) |
+| Speech | Web Speech API, Whisper-tiny, SpeechT5 |
+| Avatar | Custom 2D SVG rigged animation (two-bone IK, parametric hands) |
+| Deployment | Vercel (frontend) · Render (backend) |
+| PWA | vite-plugin-pwa, Workbox runtime caching for AI model weights |
+
+## 📦 Quick Start
+
+### Prerequisites
+
+- Node.js 18+ (22.5+ recommended — uses built-in `node:sqlite`)
+- npm 9+
+
+### Local Development
 
 ```bash
-cd frontend && npm run build   # outputs dist/ + PWA service worker
+# 1. Backend (terminal 1)
+cd backend
+npm install
+npm start                     # → http://localhost:3001
+
+# 2. Frontend (terminal 2)
+cd frontend
+npm install
+npm run dev                   # → http://localhost:5173 (/api + /socket.io proxied)
+
+# 3. Production build
+cd frontend
+npm run build                 # → dist/ + PWA service worker
+npm run preview
 ```
+
+### Environment Variables
+
+| Variable | Where | Default | Purpose |
+|---|---|---|---|
+| `VITE_API_URL` | frontend build | *(same-origin)* | Backend base URL for REST + Socket.IO (e.g. `https://vaaksetu-api-cit0.onrender.com`) |
+| `PORT_BACKEND` / `PORT` | backend | `3001` | HTTP port |
+| `REPLICATE_API_TOKEN` | backend | *(unset)* | Enables server-side XTTS-v2 voice cloning; without it the app transparently uses local pitch-matched TTS |
+
+## 🎯 Use Cases
+
+- **Cerebral palsy** — pictogram AAC with predictive sentence completion
+- **ALS / motor neuron disease** — preserve your voice while you still can; the
+  avatar keeps speaking as you after speech is lost
+- **Stroke recovery (aphasia)** — pictograms → fluent speech output
+- **Non-verbal autism** — structured, low-pressure communication
+- **Deaf + hard of hearing** — real-time sign recognition and a signing avatar
+- **Locked-in syndrome** — any input modality becomes a voice
+
+## 🗺️ Roadmap
+
+- [x] v1.0 — 12 HT-02 core features
+- [x] v2.0 — Avatar, on-device AI, voice cloning, continuous ISL, bidirectional conversation
+- [ ] v2.1 — Clinical validation pilot with AAC users
+- [ ] v2.2 — ABDM/ABHA health-ID integration
+- [ ] v3.0 — ASL/BSL multi-language sign support
+- [ ] v3.1 — Group mode for classrooms (beyond 1-on-1 + small groups)
+
+## 🤝 Contributing
+
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for the dev
+setup, code style, and PR process. Good first issues are tagged `good first issue`.
+
+## 📄 License
+
+MIT License — see [LICENSE](LICENSE).
+
+## 🙏 Acknowledgments
+
+- **AI4Bharat** — Indic language speech research that informs the multilingual layer
+- **MediaPipe team at Google** — hand landmark models that make sign recognition possible
+- **MLC / WebLLM** — on-device LLM inference in the browser
+- **Xenova (Transformers.js)** — Whisper and SpeechT5 in the browser
+- **Coqui (XTTS-v2)** — open voice cloning
+- The open-source AAC community, and every tester who lent us their hands and voices
+
+## 📬 Contact
+
+- GitHub: [@infoknahmed](https://github.com/infoknahmed)
+- Live: [https://vaaksetu.vercel.app](https://vaaksetu.vercel.app)
+
+---
+
+**Built with 💙 for the 7 million Indians who deserve a voice.**

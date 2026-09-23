@@ -1,7 +1,13 @@
 {
-  "name": "frontend",
+  "name": "vaaksetu",
+  "description": "The Bridge of Voice — AI-powered AAC platform for non-verbal users",
   "private": true,
-  "version": "0.0.0",
+  "version": "2.0.0",
+  "author": "infoknahmed",
+  "homepage": "https://vaaksetu.vercel.app",
+  "repository": "https://github.com/infoknahmed/vaaksetu",
+  "keywords": ["aac", "assistive-tech", "accessibility", "sign-language", "voice-cloning", "ai"],
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",
