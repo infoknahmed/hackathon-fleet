@@ -13,6 +13,7 @@ import {
   Eye,
   EyeOff,
   FlipHorizontal2,
+  Waves,
 } from "lucide-react"
 import { FilesetResolver, HandLandmarker } from "@mediapipe/tasks-vision"
 import { sendMessage } from "../lib/messageBus"
@@ -28,6 +29,7 @@ import {
 } from "../lib/gestureClassifier"
 import { TrainingModePanel } from "../components/TrainingModePanel"
 import { AvatarPlayer } from "../components/Avatar/AvatarPlayer"
+import { ContinuousRecognizer, SEGMENT_DISPLAY } from "../lib/sign/continuousRecognizer"
 import { COLORS, FONT, RADIUS, SHADOW, TAP_MIN } from "../theme"
 
 /* ─────────────────────────── Gesture model ─────────────────────────── */
@@ -174,6 +176,12 @@ export default function SignLanguagePage() {
 
   // Sentence builder.
   const [sentence, setSentence] = useState<string[]>([])
+
+  // ── Continuous mode (Phase 4) ──
+  const [continuousMode, setContinuousMode] = useState(false)
+  const [continuousSentence, setContinuousSentence] = useState<string[]>([])
+  const recognizerRef = useRef<ContinuousRecognizer | null>(null)
+  const contPushBusyRef = useRef(false)
 
   // Wide viewport flag (avatar echo panel is desktop-only).
   const [wide, setWide] = useState(() => typeof window !== "undefined" && window.innerWidth >= 1024)
@@ -349,6 +357,24 @@ export default function SignLanguagePage() {
           }
         }
 
+        // Continuous recognition (Phase 4): segment + classify the stream.
+        if (continuousMode) {
+          if (!recognizerRef.current) recognizerRef.current = new ContinuousRecognizer()
+          if (!contPushBusyRef.current) {
+            contPushBusyRef.current = true
+            const seg = recognizerRef.current.push(hands[0] ?? null, now)
+            contPushBusyRef.current = false
+            if (seg) {
+              const label = SEGMENT_DISPLAY[seg.label] ?? seg.label
+              setContinuousSentence((prev) => [...prev, label].slice(-8))
+              playAcceptBeep()
+              announce(`Sign recognized: ${label}`)
+            }
+          }
+        } else if (recognizerRef.current) {
+          recognizerRef.current.reset()
+        }
+
         // Dynamic gestures from motion history.
         let detected: GestureName | null = null
         if (hands.length > 0) {
@@ -362,7 +388,8 @@ export default function SignLanguagePage() {
         }
 
         // Static classification (model when enabled, else heuristics).
-        if (hands.length > 0 && !detected) {
+        // Paused while continuous mode owns recognition.
+        if (hands.length > 0 && !detected && !continuousMode) {
           const wantModel = useTrained && hasModel && !predictBusyRef.current
           const canPredict = now - lastPredictAtRef.current >= 100
           if (wantModel && canPredict) {
@@ -430,7 +457,7 @@ export default function SignLanguagePage() {
       }
     }
     rafRef.current = requestAnimationFrame(tick)
-  }, [drawOverlay, playAcceptBeep, useTrained, hasModel, facing])
+  }, [drawOverlay, playAcceptBeep, useTrained, hasModel, facing, continuousMode])
 
   /* ── Camera + MediaPipe lifecycle ── */
   useEffect(() => {
@@ -690,6 +717,19 @@ export default function SignLanguagePage() {
         <button type="button" onClick={() => setShowOverlay((o) => !o)} aria-pressed={showOverlay} aria-label="Toggle landmark overlay" style={iconBtn}>
           {showOverlay ? <Eye size={20} aria-hidden="true" /> : <EyeOff size={20} aria-hidden="true" />}
         </button>
+        <button
+          type="button"
+          onClick={() => {
+            setContinuousMode((c) => !c)
+            setContinuousSentence([])
+            recognizerRef.current?.reset()
+          }}
+          aria-pressed={continuousMode}
+          aria-label="Toggle continuous sign language mode"
+          style={{ ...iconBtn, width: "auto", padding: "0 14px", gap: 7, fontSize: 13, fontWeight: 800, color: continuousMode ? COLORS.accentBright : COLORS.text, borderColor: continuousMode ? "rgba(0,224,255,0.5)" : COLORS.borderGlass }}
+        >
+          <Waves size={18} aria-hidden="true" /> Continuous {continuousMode ? "ON" : "OFF"}
+        </button>
       </div>
 
       {/* Top-right: switch camera */}
@@ -832,6 +872,50 @@ export default function SignLanguagePage() {
                 </button>
               )}
             </div>
+            {/* Continuous-mode recognized sentence (Phase 4) */}
+            {continuousMode && (
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, flexWrap: "wrap", minHeight: 30 }} role="status" aria-live="polite">
+                <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1.2, textTransform: "uppercase", color: COLORS.accentBright }}>
+                  Continuous:
+                </span>
+                {continuousSentence.length === 0 ? (
+                  <span style={{ fontSize: 12.5, color: COLORS.textDim }}>sign a phrase — recognized words appear here</span>
+                ) : (
+                  <>
+                    {continuousSentence.map((w, i) => (
+                      <span key={`${w}-${i}`} style={{ background: "rgba(124,58,237,0.14)", border: "1px solid rgba(124,58,237,0.5)", borderRadius: RADIUS.pill, padding: "2px 10px", fontSize: 13, fontWeight: 800 }}>
+                        {w}
+                      </span>
+                    ))}
+                    <button type="button" onClick={() => speak(continuousSentence.join(" "))} className="btn-ghost" aria-label="Speak the recognized sentence" style={{ minHeight: 34, padding: "0 10px", fontSize: 12, display: "inline-flex", alignItems: "center", gap: 5 }}>
+                      <Volume2 size={14} aria-hidden="true" /> Speak
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        sendMessage({
+                          id: `cont-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                          type: "sign",
+                          text: continuousSentence.join(" "),
+                          confidence: 80,
+                          timestamp: Date.now(),
+                        })
+                        setSentToast("Continuous sentence sent ✓")
+                        window.setTimeout(() => setSentToast(null), 2400)
+                      }}
+                      className="btn-ghost"
+                      aria-label="Send the recognized sentence to the guardian"
+                      style={{ minHeight: 34, padding: "0 10px", fontSize: 12, display: "inline-flex", alignItems: "center", gap: 5 }}
+                    >
+                      <Send size={13} aria-hidden="true" /> Send
+                    </button>
+                    <button type="button" onClick={() => setContinuousSentence([])} aria-label="Clear the continuous sentence" style={{ background: "transparent", border: "none", color: COLORS.textDim, fontSize: 12, cursor: "pointer", textDecoration: "underline" }}>
+                      clear
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
