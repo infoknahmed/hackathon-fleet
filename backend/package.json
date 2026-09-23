@@ -1,11 +1,11 @@
 ﻿{
-    "name":  "vaaksetu-backend",
+    "name":  "vaaksetu",
     "version":  "2.0.0",
-    "description":  "VaakSetu API server — Express + Socket.IO + SQLite",
+    "description":  "The Bridge of Voice — AI-powered AAC platform (API server: Express + Socket.IO + SQLite)",
     "author":  "infoknahmed",
     "homepage":  "https://vaaksetu.vercel.app",
-    "repository":  "https://github.com/infoknahmed/vaaksetu",
-    "keywords":  ["aac", "assistive-tech", "accessibility", "sign-language", "realtime", "websocket"],
+    "repository":  "https://github.com/infoknahmed/vaaksetu-2026",
+    "keywords":  ["aac", "assistive-tech", "accessibility", "sign-language", "voice-cloning", "ai"],
     "license":  "MIT",
     "main":  "server.js",
     "scripts":  {

@@ -7,7 +7,7 @@ and the PR process.
 
 ```bash
 # 1. Clone and install
-git clone https://github.com/infoknahmed/vaaksetu.git
+git clone https://github.com/infoknahmed/vaaksetu-2026.git
 cd vaaksetu
 
 # 2. Backend (Node 18+, 22.5+ recommended for built-in node:sqlite)

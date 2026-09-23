@@ -2,7 +2,7 @@
 
 ### The Bridge of Voice — An AI-powered AAC platform for non-verbal users
 
-[Live Demo](https://vaaksetu.vercel.app) · [Report Bug](https://github.com/infoknahmed/vaaksetu/issues) · [Request Feature](https://github.com/infoknahmed/vaaksetu/issues)
+[Live Demo](https://vaaksetu.vercel.app) · [Backend API](https://vaaksetu-api-cit0.onrender.com/api/health) · [Report Bug](https://github.com/infoknahmed/vaaksetu-2026/issues) · [Request Feature](https://github.com/infoknahmed/vaaksetu-2026/issues)
 
 ---
 
@@ -63,41 +63,38 @@ conversation*.
 |---|---|
 | ![Landing](docs/screenshots/landing.png) | ![Avatar Talk](docs/screenshots/avatar-talk.png) |
 | *Role selection* | *Bidirectional avatar conversation* |
-| ![User Dashboard](docs/screenshots/user-dashboard.png) | ![Text to Sign](docs/screenshots/text-to-sign.png) |
-| *Pictogram AAC dashboard* | *Animated signing avatar* |
-| ![Sign Language](docs/screenshots/sign-language.png) | ![Voice Setup](docs/screenshots/voice-setup.png) |
-| *Continuous ISL recognition* | *Voice cloning wizard* |
+| ![User Dashboard](docs/screenshots/user-dashboard.png) | ![Sign Language](docs/screenshots/sign-language.png) |
+| *Pictogram AAC dashboard* | *Continuous ISL recognition* |
+| ![Text to Sign](docs/screenshots/text-to-sign.png) | ![Voice Setup](docs/screenshots/voice-setup.png) |
+| *Animated signing avatar* | *Voice cloning wizard* |
 
 ## 🏗️ Architecture
 
-```mermaid
-flowchart LR
-    subgraph Browser["Browser (on-device, privacy-first)"]
-        UI["React 18 + Vite SPA"]
-        subgraph AI["On-device AI (Web Workers)"]
-            WLLM["WebLLM<br/>Qwen2.5-0.5B (WebGPU)"]
-            WHISPER["Whisper-tiny<br/>(Transformers.js)"]
-            MP["MediaPipe Hands<br/>(WASM + GPU)"]
-        end
-        AV["Signing Avatar<br/>SVG + IK rig"]
-        SW["PWA Service Worker<br/>(Workbox)"]
-    end
-
-    subgraph Server["Backend (Express + SQLite)"]
-        API["REST API"]
-        SIO["Socket.IO hub"]
-        DB[("SQLite<br/>WAL mode")]
-    end
-
-    UI <-->|"Web Speech API"| UI
-    MP -->|"21 hand landmarks"| UI
-    WLLM --> UI
-    WHISPER --> UI
-    UI <-->|"signs / speaks"| AV
-    UI <-->|"REST /api/*"| API
-    UI <-->|"realtime messages"| SIO
-    API --> DB
-    SIO --> DB
+```text
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ BROWSER — privacy-first: all sensitive data stays on-device                  │
+│                                                                              │
+│   React 18 + Vite SPA (installable PWA)                                      │
+│     ├─ Web Speech API ──── live STT / TTS · 5 Indian languages               │
+│     ├─ MediaPipe Hands ─── 21 landmarks × 2 hands → sign recognition         │
+│     ├─ Signing Avatar ──── 2D SVG + IK rig · 100+ poses · expressions        │
+│     ├─ Web Workers ─────── WebLLM Qwen2.5-0.5B · Whisper-tiny · SpeechT5     │
+│     └─ Service worker ──── offline app shell + cached model weights          │
+└───────────────────────────────────────┬──────────────────────────────────────┘
+                                        │  REST /api/*  +  Socket.IO
+                                        ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ BACKEND — Render (Node.js + Express)                                         │
+│                                                                              │
+│   REST API ───────────── messages · replies · admin stats · voice-clone      │
+│   Socket.IO hub ──────── live broadcast · rooms · receipts · room relay      │
+│   XTTS-v2 (Replicate) ── opt-in voice cloning → local pitch fallback         │
+└───────────────────────────────────────┬──────────────────────────────────────┘
+                                        │
+                                        ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ SQLite (WAL mode, node:sqlite) — messages · replies · analytics              │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Real-time flow (hearing → deaf):** mic → `webkitSpeechRecognition` transcript →
@@ -113,7 +110,7 @@ events, DB schema, and AI model loading strategy.
 
 | Layer | Technology |
 |---|---|
-| Frontend | React 18, Vite 5, TypeScript, Motion, React Router 7 |
+| Frontend | React 18, Vite, TypeScript, Motion, React Router 7 |
 | Styling | Custom design system (aurora gradients + glassmorphism) |
 | Real-time | Socket.IO |
 | Backend | Node.js 18+, Express, SQLite (`node:sqlite`, zero native deps) |
