@@ -25,3 +25,9 @@ backend/data/
 .vercel-stage/
 
 frontend/.vercel-stage/
+
+.freebuff/
+
+.vercel-stage/
+
+frontend/.vercel-stage/
