@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import type { CSSProperties } from "react"
+import { Link } from "react-router-dom"
 import { AnimatePresence, motion } from "motion/react"
 import {
   Volume2,
@@ -12,10 +13,12 @@ import {
   Info,
   Check,
   X,
+  Accessibility,
+  Quote,
 } from "lucide-react"
 import { PictogramGrid, SelectionChips } from "../components/PictogramGrid"
 import type { Pictogram } from "../components/PictogramGrid"
-import { predictSentence } from "../lib/predict"
+import { predictSentence, recordCorrection, recordPhraseUsed } from "../lib/predict"
 import {
   sendMessage,
   subscribeToMessages,
@@ -23,8 +26,16 @@ import {
   deleteUserMessages,
 } from "../lib/messageBus"
 import type { VaakSetuMessage, ReplyMessage } from "../lib/messageBus"
+import { cacheMessage, enqueueMessage, isOnline } from "../lib/offline"
 import { LANGUAGES, lookupTranslation } from "../lib/translations"
 import type { LanguageCode } from "../lib/translations"
+import { playTap, playSuccess, setSfxMuted } from "../lib/soundEffects"
+import {
+  announce,
+  loadA11ySettings,
+  saveA11ySettings,
+} from "../lib/a11y"
+import type { A11ySettings } from "../lib/a11y"
 import {
   speak,
   speakWithLanguage,
@@ -91,6 +102,8 @@ export default function UserDashboard() {
   const [lastReply, setLastReply] = useState<(ReplyMessage & { read: boolean }) | null>(
     null,
   )
+  const [a11y, setA11y] = useState<A11ySettings>(() => loadA11ySettings())
+  const [alternatives, setAlternatives] = useState<string[]>([])
   const replyTimerRef = useRef<number | null>(null)
 
   const isFull = selected.length >= MAX_SELECTION
@@ -125,6 +138,7 @@ export default function UserDashboard() {
   }, [])
 
   const handleSelect = (p: Pictogram) => {
+    playTap()
     setSelected((prev) => {
       if (prev.some((s) => s.id === p.id)) return prev
       if (prev.length >= MAX_SELECTION) return prev
@@ -132,6 +146,7 @@ export default function UserDashboard() {
     })
     setSentence("")
     setTranslatedText("")
+    setAlternatives([])
   }
 
   const handleClear = () => {
@@ -144,12 +159,6 @@ export default function UserDashboard() {
   const showToast = (text: string) => {
     setToast(text)
     window.setTimeout(() => setToast(null), 2000)
-  }
-
-  const publish = (msg: VaakSetuMessage) => {
-    sendMessage(msg)
-    appendHistory(msg)
-    setHistory(loadHistory())
   }
 
   /** Speaks in the selected language; returns the translated text or null. */
@@ -180,21 +189,74 @@ export default function UserDashboard() {
     speak(phrase, loadVoiceSettings(), { langCode: voiceTestLang })
   }
 
+  const publish = (msg: VaakSetuMessage) => {
+    void cacheMessage(msg)
+    if (isOnline()) {
+      sendMessage(msg)
+    } else {
+      void enqueueMessage(msg)
+      showToast("Offline — message queued ✓")
+      return
+    }
+    appendHistory(msg)
+    setHistory(loadHistory())
+  }
+
   const handleSpeak = () => {
-    const result = predictSentence(selected.map((s) => s.label))
+    const result = predictSentence(selected.map((s) => s.label), {
+      lastMood: history[0]?.type === "message" ? history[0].mood : undefined,
+    })
     setSentence(result.text)
     setTranslatedText(speakSentence(result.text) ?? "")
+    recordPhraseUsed(result.text)
+    // Low confidence → offer alternatives instead of silently speaking.
+    if (result.confidence < 60 && result.alternatives && result.alternatives.length > 0) {
+      setAlternatives(result.alternatives)
+    } else {
+      setAlternatives([])
+    }
 
     publish({
       type: "message",
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       text: result.text,
       pictograms: selected.map((p) => ({ id: p.id, label: p.label, emoji: p.emoji })),
-      confidence: result.isFallback ? 62 : 96,
+      confidence: result.confidence,
       timestamp: Date.now(),
       mood: detectMood(result.text),
     })
-    showToast("Sent to guardian ✓")
+    playSuccess()
+    announce(`Message sent: ${result.text}`)
+    showToast(`Sent to guardian ✓ (${result.confidence}% confidence)`)
+  }
+
+  /** User picked an alternative phrasing — re-speak + re-send it. */
+  const handlePickAlternative = (text: string) => {
+    setSentence(text)
+    setTranslatedText(speakSentence(text) ?? "")
+    setAlternatives([])
+    // Teach the predictor: swap the first differing word.
+    if (sentence) {
+      const fromWords = sentence.toLowerCase().split(/\s+/)
+      const toWords = text.toLowerCase().split(/\s+/)
+      for (let i = 0; i < Math.min(fromWords.length, toWords.length); i++) {
+        if (fromWords[i] !== toWords[i]) {
+          recordCorrection(fromWords[i], toWords[i])
+          break
+        }
+      }
+    }
+    publish({
+      type: "message",
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      text,
+      pictograms: selected.map((p) => ({ id: p.id, label: p.label, emoji: p.emoji })),
+      confidence: 92,
+      timestamp: Date.now(),
+      mood: detectMood(text),
+    })
+    playSuccess()
+    showToast("Updated ✓ — the app learns your preference")
   }
 
   const handleSOS = () => {
@@ -210,6 +272,7 @@ export default function UserDashboard() {
       mood: "Urgent",
       emergency: true,
     })
+    announce("Emergency alert triggered")
     showToast("SOS sent to guardian 🚨")
   }
 
@@ -537,6 +600,63 @@ export default function UserDashboard() {
                   <RotateCcw size={19} strokeWidth={2.5} aria-hidden="true" /> Speak Again
                 </button>
               )}
+
+              {/* Low-confidence alternatives — tap to teach the predictor */}
+              <AnimatePresence>
+                {alternatives.length > 0 && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    role="group"
+                    aria-label="Alternative predictions"
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 8,
+                      background: "rgba(250, 204, 21, 0.07)",
+                      border: "1px solid rgba(250, 204, 21, 0.4)",
+                      borderRadius: RADIUS.lg,
+                      padding: 14,
+                    }}
+                  >
+                    <span style={{ fontSize: 14, fontWeight: 800, color: COLORS.warning }}>
+                      Not confident — did you mean:
+                    </span>
+                    {alternatives.map((alt) => (
+                      <button
+                        key={alt}
+                        type="button"
+                        onClick={() => handlePickAlternative(alt)}
+                        className="btn-ghost"
+                        style={{
+                          minHeight: TAP_MIN,
+                          padding: "0 14px",
+                          fontSize: 15,
+                          textAlign: "left",
+                          color: COLORS.accentBright,
+                          borderColor: "rgba(250, 204, 21, 0.5)",
+                        }}
+                      >
+                        {alt}
+                      </button>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Quick links to the dedicated feature pages */}
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <Link to="/phrases" className="btn-ghost" aria-label="Open your most-used phrases" style={{ minHeight: TAP_MIN, display: "inline-flex", alignItems: "center", gap: 7, padding: "0 14px", fontSize: 13.5, textDecoration: "none" }}>
+                  <Quote size={15} aria-hidden="true" /> My Phrases
+                </Link>
+                <Link to="/speech" className="btn-ghost" aria-label="Open speech to text" style={{ minHeight: TAP_MIN, display: "inline-flex", alignItems: "center", gap: 7, padding: "0 14px", fontSize: 13.5, textDecoration: "none" }}>
+                  <Mic size={15} aria-hidden="true" /> Speech to Text
+                </Link>
+                <Link to="/history" className="btn-ghost" aria-label="Open full history" style={{ minHeight: TAP_MIN, display: "inline-flex", alignItems: "center", gap: 7, padding: "0 14px", fontSize: 13.5, textDecoration: "none" }}>
+                  <History size={15} aria-hidden="true" /> Full History
+                </Link>
+              </div>
             </section>
           </>
         )}
@@ -805,6 +925,88 @@ export default function UserDashboard() {
             >
               <Volume2 size={18} aria-hidden="true" /> Test voice
             </button>
+
+            {/* Link to the full voice inventory page */}
+            <Link
+              to="/voices"
+              className="btn-ghost"
+              aria-label="Open the system voices page"
+              style={{
+                minHeight: TAP_MIN,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                fontSize: 15,
+                textDecoration: "none",
+              }}
+            >
+              Browse all system voices →
+            </Link>
+
+            {/* ── Accessibility settings panel ── */}
+            <div style={{ borderTop: `1px solid ${COLORS.borderGlass}`, paddingTop: 18 }}>
+              <h3 style={{ margin: "0 0 12", fontSize: 17, fontWeight: 800, display: "flex", alignItems: "center", gap: 8 }}>
+                <Accessibility size={18} aria-hidden="true" /> Accessibility
+              </h3>
+
+              <label htmlFor="a11y-text-size" style={{ fontSize: 15, fontWeight: 700, display: "block", marginBottom: 6 }}>
+                Text size
+              </label>
+              <select
+                id="a11y-text-size"
+                value={a11y.textSize}
+                onChange={(e) => {
+                  const next = { ...a11y, textSize: e.target.value as A11ySettings["textSize"] }
+                  setA11y(next)
+                  saveA11ySettings(next)
+                }}
+                style={selectStyle}
+              >
+                <option value="normal">Normal</option>
+                <option value="large">Large</option>
+                <option value="xl">Extra large</option>
+              </select>
+
+              {(
+                [
+                  { key: "reduceMotion", label: "Reduce motion" },
+                  { key: "soundEffects", label: "Sound effects" },
+                  { key: "highContrast", label: "High contrast mode" },
+                ] as const
+              ).map(({ key, label }) => (
+                <label
+                  key={key}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 10,
+                    minHeight: TAP_MIN,
+                    fontSize: 15,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    marginTop: 6,
+                  }}
+                >
+                  {label}
+                  <input
+                    type="checkbox"
+                    checked={key === "soundEffects" ? a11y.soundEffects : (a11y[key] as boolean)}
+                    onChange={(e) => {
+                      const next = { ...a11y, [key]: e.target.checked } as A11ySettings
+                      setA11y(next)
+                      saveA11ySettings(next)
+                      if (key === "soundEffects") setSfxMuted(!e.target.checked)
+                    }}
+                    style={{ width: 22, height: 22, accentColor: COLORS.accent }}
+                  />
+                </label>
+              ))}
+              <p style={{ margin: "8px 0 0", fontSize: 12.5, color: COLORS.textDim }}>
+                Sound effects include tap clicks, success chimes, and error buzzes. Emergency alarms always play.
+              </p>
+            </div>
           </motion.section>
         )}
       </main>

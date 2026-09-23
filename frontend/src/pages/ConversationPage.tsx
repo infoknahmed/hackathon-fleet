@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import type { CSSProperties } from "react"
+import type { CSSProperties, ReactNode } from "react"
 import { AnimatePresence, motion } from "motion/react"
 import {
   Mic,
@@ -9,21 +9,32 @@ import {
   Trash2,
   Hand,
   Ear,
+  FileDown,
+  Check,
+  CheckCheck,
+  AlertTriangle,
 } from "lucide-react"
 import { PictogramGrid } from "../components/PictogramGrid"
 import type { Pictogram } from "../components/PictogramGrid"
 import { MessageCard } from "../components/MessageCard"
 import type { ChatMessage } from "../components/MessageCard"
 import { SignAvatar } from "../components/SignAvatar"
-import { predictSentence } from "../lib/predict"
+import { predictSentence, recordPhraseUsed, recordCorrection } from "../lib/predict"
 import {
   speak,
   speakWithLanguage,
   stopSpeaking,
   loadVoiceSettings,
+  isLanguageSupported,
 } from "../lib/speech"
+import { startNoiseGate } from "../lib/noise"
+import type { NoiseGate } from "../lib/noise"
+import { playTap, playSuccess, playError } from "../lib/soundEffects"
+import { announce } from "../lib/a11y"
 import { LANGUAGES, lookupTranslation } from "../lib/translations"
 import type { LanguageCode } from "../lib/translations"
+import { sendMessage, getUserId } from "../lib/messageBus"
+import { cacheMessage, enqueueMessage, isOnline } from "../lib/offline"
 import { tokens } from "../styles/tokens"
 import { COLORS, FONT, RADIUS, SHADOW, TAP_MIN } from "../theme"
 import AuroraButton from "../components/ui/AuroraButton"
@@ -32,39 +43,29 @@ import TopNav from "../components/TopNav"
 const STORAGE_KEY = "vaaksetu-conversation"
 
 /** BCP-47 tags for speech recognition + synthesis. */
-const BCP47: Record<LanguageCode, string> = {
-  en: "en-US",
+const BCP47: Record<string, string> = {
+  en: "en-IN",
   hi: "hi-IN",
   kn: "kn-IN",
   te: "te-IN",
   ta: "ta-IN",
+  mr: "mr-IN",
+  bn: "bn-IN",
+  ml: "ml-IN",
 }
 
 /** Simple ISL-style sign vocabulary mapped from pictograms. */
 const SIGNS: Record<string, string> = {
-  yes: "👍",
-  no: "👎",
-  water: "💧",
-  food: "🍛",
-  toilet: "🚽",
-  pain: "🤕",
-  help: "🆘",
-  family: "👨‍👩‍👧",
-  more: "➕",
+  yes: "👍", no: "👎", water: "💧", food: "🍛", toilet: "🚽",
+  pain: "🤕", help: "🆘", family: "👨‍👩‍👧", more: "➕",
 }
 
-/** Mic-meter tuning (noise handling). */
-const NOISE_LEVEL = 0.5
-const NOISE_TRIGGER_MS = 2000
-const NOISE_FADE_MS = 3000
-/** Activation thresholds for the 5 level bars. */
-const BAR_STEPS = [0.06, 0.22, 0.4, 0.58, 0.78]
+type DelivStatus = "sending" | "sent" | "delivered" | "read" | "queued"
 
-/** ASR confidence badge color (>0.8 green, 0.5–0.8 yellow, <0.5 red). */
-function asrConfColor(confidence: number): string {
-  if (confidence > 0.8) return COLORS.success
-  if (confidence >= 0.5) return COLORS.warning
-  return COLORS.danger
+interface LocalChatMessage extends ChatMessage {
+  status?: DelivStatus
+  lang?: string
+  typeBadge?: string
 }
 
 type RecognitionEvent = {
@@ -95,17 +96,17 @@ function getRecognitionCtor(): RecognitionCtor | null {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null
 }
 
-function loadConversation(): ChatMessage[] {
+function loadConversation(): LocalChatMessage[] {
   try {
     const raw = sessionStorage.getItem(STORAGE_KEY)
-    if (raw) return JSON.parse(raw) as ChatMessage[]
+    if (raw) return JSON.parse(raw) as LocalChatMessage[]
   } catch {
     /* ignore */
   }
   return []
 }
 
-function persist(msgs: ChatMessage[]) {
+function persist(msgs: LocalChatMessage[]) {
   try {
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(msgs.slice(-100)))
   } catch {
@@ -113,148 +114,136 @@ function persist(msgs: ChatMessage[]) {
   }
 }
 
+/** ASR confidence badge color (>0.8 green, 0.5–0.8 yellow, <0.5 red). */
+function asrConfColor(confidence: number): string {
+  if (confidence > 0.8) return COLORS.success
+  if (confidence >= 0.5) return COLORS.warning
+  return COLORS.danger
+}
+
+function StatusTicks({ status }: { status: DelivStatus }) {
+  if (status === "queued") {
+    return <span title="Queued — will sync when online" style={{ display: "inline-flex", alignItems: "center", color: COLORS.warning }}><AlertTriangle size={13} aria-hidden="true" /></span>
+  }
+  if (status === "sending") return <span aria-label="Sending" style={{ fontSize: 11, color: COLORS.textDim }}>…</span>
+  if (status === "sent") return <Check size={13} aria-label="Sent" style={{ color: COLORS.textDim }} />
+  if (status === "delivered") return <CheckCheck size={13} aria-label="Delivered" style={{ color: COLORS.accentBright }} />
+  return <CheckCheck size={13} aria-label="Read" style={{ color: COLORS.success }} />
+}
+
 export default function ConversationPage() {
-  const [messages, setMessages] = useState<ChatMessage[]>(() => loadConversation())
+  const [messages, setMessages] = useState<LocalChatMessage[]>(() => loadConversation())
   const [selected, setSelected] = useState<Pictogram[]>([])
   const [lang, setLang] = useState<LanguageCode>("en")
   const [typed, setTyped] = useState("")
+  const [interim, setInterim] = useState("")
   const [listening, setListening] = useState(false)
   const [speechSupported] = useState(() => getRecognitionCtor() !== null)
   const [error, setError] = useState<string | null>(null)
   const [signPopup, setSignPopup] = useState<{ text: string } | null>(null)
   const [speechConfidence, setSpeechConfidence] = useState<number | null>(null)
-  // Mic metering (noise handling)
+  const [lowConfAlternatives, setLowConfAlternatives] = useState<string[] | null>(null)
   const [micLevel, setMicLevel] = useState(0)
   const [noisy, setNoisy] = useState(false)
-  // ASR confidence + low-confidence correction
-  const [suggestion, setSuggestion] = useState<string | null>(null)
+  const [speechActive, setSpeechActive] = useState(false)
+  const [guardianTyping, setGuardianTyping] = useState<string | null>(null)
+  const [confirmClear, setConfirmClear] = useState(false)
+  const [showJump, setShowJump] = useState(false)
+  /** Last low-confidence transcript (for learning from corrections). */
+  const [lastLowConfText, setLastLowConfText] = useState<string | null>(null)
 
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null)
-  const shouldListenRef = useRef(false)
-  const meterStreamRef = useRef<MediaStream | null>(null)
-  const meterCtxRef = useRef<AudioContext | null>(null)
-  const meterRafRef = useRef(0)
-  const loudSinceRef = useRef<number | null>(null)
-  const quietSinceRef = useRef<number | null>(null)
-  const noisyShownAtRef = useRef<number | null>(null)
-  const chatEndRefLeft = useRef<HTMLDivElement | null>(null)
-  const chatEndRefRight = useRef<HTMLDivElement | null>(null)
+  const noiseGateRef = useRef<NoiseGate | null>(null)
+  const chatEndRef = useRef<HTMLDivElement | null>(null)
+  const chatScrollRef = useRef<HTMLDivElement | null>(null)
+  const socketTypingHandlerRef = useRef<((payload: { who?: string; typing?: boolean }) => void) | null>(null)
 
   // Persist to sessionStorage on every change.
   useEffect(() => {
     persist(messages)
   }, [messages])
 
-  // Autoscroll chat to the newest message.
+  // Typing indicator via Socket.IO relay.
   useEffect(() => {
-    chatEndRefLeft.current?.scrollIntoView({ behavior: "smooth", block: "end" })
-  }, [messages, signPopup])
+    let unsubscribe: (() => void) | undefined
+    void (async () => {
+      const { getSocket } = await import("../lib/messageBus")
+      const socket = getSocket()
+      if (!socket) return
+      socketTypingHandlerRef.current = (payload) => {
+        if (payload && typeof payload.who === "string") {
+          setGuardianTyping(payload.typing ? payload.who : null)
+        }
+      }
+      socket.on("typing", socketTypingHandlerRef.current)
+      socket.on("message:status", (payload: { id?: string; status?: string }) => {
+        if (!payload?.id) return
+        setMessages((prev) =>
+          prev.map((m) => (m.id === payload.id ? { ...m, status: (payload.status as DelivStatus) ?? m.status } : m)),
+        )
+      })
+      unsubscribe = () => {
+        socket.off("typing", socketTypingHandlerRef.current ?? undefined)
+      }
+    })()
+    return unsubscribe
+  }, [])
 
-  // Right panel autoscroll.
+  // Autoscroll + jump-to-newest visibility.
   useEffect(() => {
-    chatEndRefRight.current?.scrollIntoView({ behavior: "smooth", block: "end" })
-  }, [messages])
+    const el = chatScrollRef.current
+    if (!el) return
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120
+    if (nearBottom) {
+      chatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" })
+      setShowJump(false)
+    } else {
+      setShowJump(true)
+    }
+  }, [messages, signPopup, guardianTyping])
 
   // Cleanup recognition + mic meter on unmount.
   useEffect(() => {
     return () => {
-      shouldListenRef.current = false
       recognitionRef.current?.abort()
-      stopMicMeter()
+      noiseGateRef.current?.stop()
     }
   }, [])
 
-  const pushMessage = useCallback((msg: ChatMessage) => {
-    setMessages((prev) => [...prev, msg])
-  }, [])
-
-  /* ── Mic level meter: AudioContext + AnalyserNode → 5 bars + noise alert ── */
-  const stopMicMeter = useCallback(() => {
-    cancelAnimationFrame(meterRafRef.current)
-    meterRafRef.current = 0
+  const stopNoiseGate = useCallback(() => {
+    noiseGateRef.current?.stop()
+    noiseGateRef.current = null
     setMicLevel(0)
-    loudSinceRef.current = null
-    quietSinceRef.current = null
-    noisyShownAtRef.current = null
     setNoisy(false)
-    meterStreamRef.current?.getTracks().forEach((t) => t.stop())
-    meterStreamRef.current = null
-    void meterCtxRef.current?.close().catch(() => undefined)
-    meterCtxRef.current = null
+    setSpeechActive(false)
   }, [])
 
-  const startMicMeter = useCallback(async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      meterStreamRef.current = stream
-      const Ctor =
-        window.AudioContext ||
-        (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
-      if (!Ctor) return
-      const ctx = new Ctor()
-      meterCtxRef.current = ctx
-      const analyser = ctx.createAnalyser()
-      analyser.fftSize = 1024
-      ctx.createMediaStreamSource(stream).connect(analyser)
-      const buf = new Uint8Array(analyser.fftSize)
-
-      const loop = () => {
-        analyser.getByteTimeDomainData(buf)
-        let peak = 0
-        for (let i = 0; i < buf.length; i++) {
-          const dev = Math.abs(buf[i] - 128)
-          if (dev > peak) peak = dev
-        }
-        const level = Math.min(1, peak / 128)
-        setMicLevel(level)
-
-        // Noise gating: very loud for >2s → warn; fade 3s after it quietens.
-        const now = performance.now()
-        if (level > NOISE_LEVEL) {
-          quietSinceRef.current = null
-          if (loudSinceRef.current === null) {
-            loudSinceRef.current = now
-          } else if (
-            now - loudSinceRef.current > NOISE_TRIGGER_MS &&
-            noisyShownAtRef.current === null
-          ) {
-            noisyShownAtRef.current = now
-            setNoisy(true)
-          }
-        } else {
-          loudSinceRef.current = null
-          if (quietSinceRef.current === null) quietSinceRef.current = now
-          if (
-            noisyShownAtRef.current !== null &&
-            now - quietSinceRef.current > NOISE_FADE_MS
-          ) {
-            noisyShownAtRef.current = null
-            quietSinceRef.current = null
-            setNoisy(false)
-          }
-        }
-        meterRafRef.current = requestAnimationFrame(loop)
-      }
-      loop()
-    } catch {
-      /* metering is best-effort */
+  const pushMessage = useCallback((msg: LocalChatMessage) => {
+    setMessages((prev) => [...prev, msg])
+    // Persist + offline-queue outside this transaction.
+    const busMsg = {
+      id: msg.id,
+      type: msg.side === "left" ? ("message" as const) : ("reply" as const),
+      text: msg.text,
+      pictograms: [],
+      confidence: msg.confidence ?? 90,
+      timestamp: msg.timestamp,
+      mood: "Neutral",
+    }
+    void cacheMessage(busMsg)
+    if (isOnline()) {
+      sendMessage(busMsg)
+      void import("../lib/messageBus").then(({ postReply }) => {
+        if (msg.side === "right") void postReply(msg.text, "conversation", msg.id)
+      })
+    } else {
+      void enqueueMessage(busMsg)
     }
   }, [])
-
-  /** Show the sign avatar popup on the LEFT panel (incoming voice messages). */
-  const showSigns = useCallback((text: string) => {
-    setSignPopup({ text })
-    // Safety close — the avatar normally closes it via onComplete.
-    window.setTimeout(() => {
-      setSignPopup((cur) => (cur?.text === text ? null : cur))
-    }, 15000)
-  }, [])
-
-  const closeSignPopup = useCallback(() => setSignPopup(null), [])
 
   /** LEFT → TTS on the RIGHT side (spoken in the selected language). */
   const speakForRight = useCallback(
-    (englishText: string) => {
+    (englishText: string): string | null => {
       if (lang !== "en") {
         const entry = lookupTranslation(englishText)
         const translated = entry ? entry[lang] : null
@@ -271,19 +260,34 @@ export default function ConversationPage() {
 
   /** RIGHT → sign avatar on the LEFT side. */
   const deliverToLeft = useCallback(
-    (englishText: string, displayText: string) => {
+    (englishText: string, displayText: string, confidence?: number) => {
       showSigns(englishText)
+      const id = `r-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
       pushMessage({
-        id: `r-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        id,
         side: "right",
         text: englishText,
         displayText: displayText !== englishText ? displayText : undefined,
         timestamp: Date.now(),
         avatar: "👂",
+        confidence,
+        status: "sent",
+        lang,
+        typeBadge: "voice/text",
       })
+      announce(`New message from Guardian: ${englishText}`)
     },
-    [pushMessage, showSigns],
+    [pushMessage],
   )
+
+  const showSigns = useCallback((text: string) => {
+    setSignPopup({ text })
+    window.setTimeout(() => {
+      setSignPopup((cur) => (cur?.text === text ? null : cur))
+    }, 20000)
+  }, [])
+
+  const closeSignPopup = useCallback(() => setSignPopup(null), [])
 
   const clearSelection = () => setSelected([])
 
@@ -292,138 +296,220 @@ export default function ConversationPage() {
     if (selected.length === 0) return
     const result = predictSentence(selected.map((s) => s.label))
     const translated = speakForRight(result.text)
+    recordPhraseUsed(result.text)
+    const id = `l-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
     pushMessage({
-      id: `l-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      id,
       side: "left",
       text: result.text,
       displayText: translated ?? undefined,
-      confidence: result.isFallback ? 62 : 96,
+      confidence: result.confidence,
       timestamp: Date.now(),
       avatar: "🧑",
       picto: selected.map((p) => SIGNS[p.id] ?? p.emoji).join(" "),
+      status: "sent",
+      typeBadge: "pictogram",
     })
+    announce(`Message sent: ${result.text}`)
+    playSuccess()
     setSelected([])
   }
 
   /** LEFT: single-tap quick send (tap-to-send). */
   const handleQuickTap = (p: Pictogram) => {
+    playTap()
     const result = predictSentence([p.label])
     const translated = speakForRight(result.text)
+    const id = `l-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
     pushMessage({
-      id: `l-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      id,
       side: "left",
       text: result.text,
       displayText: translated ?? undefined,
-      confidence: result.isFallback ? 62 : 96,
+      confidence: result.confidence,
       timestamp: Date.now(),
       avatar: "🧑",
       picto: SIGNS[p.id] ?? p.emoji,
+      status: "sent",
+      typeBadge: "pictogram",
     })
   }
 
-  /** RIGHT: hold-to-record with webkitSpeechRecognition. */
+  /** RIGHT: hold-to-record with webkitSpeechRecognition + noise gate. */
   const startListening = () => {
     const Ctor = getRecognitionCtor()
     if (!Ctor || listening) return
     setError(null)
-    setSuggestion(null)
     setSpeechConfidence(null)
+    setLowConfAlternatives(null)
+    setInterim("")
     stopSpeaking()
 
     const recognition = new Ctor()
     recognition.lang = BCP47[lang]
-    recognition.continuous = false
+    recognition.continuous = true
     recognition.interimResults = true
-    recognition.maxAlternatives = 1
+    recognition.maxAlternatives = 3
 
     let finalTranscript = ""
     let finalConfidence: number | undefined = undefined
+    let finalAlternatives: string[] = []
+
     recognition.onresult = (e) => {
-      let interim = ""
+      let liveInterim = ""
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const res = e.results[i]
         const alt = res[0] as { transcript?: string; confidence?: number } | undefined
         const transcript = alt?.transcript ?? ""
         if (res.isFinal) {
+          // Noise gate: drop finals that arrived without speech activity.
+          const gate = noiseGateRef.current
+          if (gate && !gate.speechActive() && gate.snr() < 1.4) continue
           finalTranscript += transcript
           if (typeof alt?.confidence === "number" && alt.confidence > 0) {
             finalConfidence = alt.confidence
             setSpeechConfidence(alt.confidence)
           }
+          // Collect alternatives for low-confidence correction UI.
+          const alts: string[] = []
+          for (let a = 1; a < res.length; a++) {
+            const altText = (res[a] as { transcript?: string })?.transcript
+            if (altText) alts.push(altText)
+          }
+          if (alts.length > 0) finalAlternatives = alts
         } else {
-          interim += transcript
+          liveInterim += transcript
         }
       }
-      setTyped((prevLive) => (interim || finalTranscript ? interim || finalTranscript : prevLive))
+      setInterim(liveInterim)
+      if (finalTranscript) setTyped(finalTranscript)
     }
+
     recognition.onend = () => {
       setListening(false)
-      shouldListenRef.current = false
-      stopMicMeter()
-      const text = finalTranscript.trim()
+      stopNoiseGate()
+      const text = finalTranscript.trim() || interimRef.current.trim()
       if (text) {
-        deliverToLeft(text, text)
-        // Low ASR confidence → offer a correction ("Did you mean?").
-        setSuggestion(finalConfidence !== undefined && finalConfidence < 0.5 ? text : null)
+        const conf = finalConfidence ?? 0.6
+        deliverToLeft(text, text, Math.round(conf * 100))
+        if (conf < 0.5) {
+          setLowConfAlternatives(finalAlternatives.length > 0 ? finalAlternatives : [text])
+          setLastLowConfText(text)
+        }
       }
+      setInterim("")
     }
+
     recognition.onerror = (e) => {
       setListening(false)
-      shouldListenRef.current = false
-      stopMicMeter()
-      if (e.error !== "aborted" && e.error !== "no-speech") {
+      stopNoiseGate()
+      if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+        setError("Microphone blocked — allow mic access in your browser settings.")
+      } else if (e.error === "network") {
+        setError("Speech service unreachable — check your connection or type instead.")
+      } else if (e.error !== "aborted" && e.error !== "no-speech") {
         setError(`Mic error: ${e.error}`)
       }
+      if (e.error !== "aborted") playError()
     }
 
     recognitionRef.current = recognition
-    shouldListenRef.current = true
     try {
       recognition.start()
       setListening(true)
-      void startMicMeter()
+      announce("Mic listening")
+      void startNoiseGate({
+        onLevel: setMicLevel,
+        onNoisyChange: setNoisy,
+        onSpeechChange: setSpeechActive,
+      }).then((gate) => {
+        noiseGateRef.current = gate
+      })
     } catch {
       setError("Could not start the microphone.")
       setListening(false)
-      stopMicMeter()
+      stopNoiseGate()
+      playError()
     }
   }
 
-  /** Send the corrected transcript from the "Did you mean?" input. */
-  const handleSendSuggestion = () => {
-    const text = (suggestion ?? "").trim()
-    if (!text) return
-    deliverToLeft(text, text)
-    setSuggestion(null)
-  }
+  // Keep the latest interim value for the onend commit.
+  const interimRef = useRef("")
+  useEffect(() => {
+    interimRef.current = interim
+  }, [interim])
 
   const stopListening = () => {
-    shouldListenRef.current = false
     recognitionRef.current?.stop()
   }
 
-  /** RIGHT: typed text input. */
-  const handleSendTyped = () => {
-    const text = typed.trim()
+  /** Send typed text (or corrected transcript). */
+  const handleSendTyped = (override?: string) => {
+    const text = (override ?? typed).trim()
     if (!text) return
+    // Learning: when the user sends a corrected alternative, record which
+    // words changed so the predictor prefers them next time.
+    if (lastLowConfText) {
+      const fromWords = lastLowConfText.toLowerCase().split(/\s+/)
+      const toWords = text.toLowerCase().split(/\s+/)
+      for (let i = 0; i < Math.min(fromWords.length, toWords.length); i++) {
+        if (fromWords[i] !== toWords[i]) recordCorrection(fromWords[i], toWords[i])
+      }
+      setLastLowConfText(null)
+    }
     deliverToLeft(text, text)
     setTyped("")
+    setLowConfAlternatives(null)
   }
 
+  /** RIGHT: typed text input sends; Enter key sends. */
   const handleSpeakMessage = useCallback((text: string) => {
     speak(text, loadVoiceSettings())
   }, [])
 
+  const handleExportPdf = () => {
+    const win = window.open("", "_blank", "width=800,height=900")
+    if (!win) {
+      setError("Popup blocked — allow popups to export the conversation.")
+      playError()
+      return
+    }
+    const rows = messages
+      .map(
+        (m) => `<tr>
+          <td>${new Date(m.timestamp).toLocaleTimeString()}</td>
+          <td>${m.side === "left" ? "User" : "Guardian"}</td>
+          <td>${escapeHtml(m.displayText ?? m.text)}</td>
+          <td>${m.confidence != null ? `${m.confidence}%` : "—"}</td>
+        </tr>`,
+      )
+      .join("")
+    win.document.write(`<!doctype html><html><head><title>VaakSetu Conversation</title>
+      <style>body{font-family:system-ui;padding:24px}table{border-collapse:collapse;width:100%}
+      td,th{border:1px solid #ccc;padding:6px 10px;text-align:left;font-size:14px}
+      th{background:#f0f0f0}</style></head><body>
+      <h1>VaakSetu Conversation — ${new Date().toLocaleString()}</h1>
+      <p>User ID: ${getUserId()} · ${messages.length} messages</p>
+      <table><tr><th>Time</th><th>Sender</th><th>Message</th><th>Confidence</th></tr>${rows}</table>
+      </body></html>`)
+    win.document.close()
+    win.print()
+  }
+
   const handleClearChat = () => {
+    setConfirmClear(true)
+  }
+
+  const doClear = () => {
     setMessages([])
     sessionStorage.removeItem(STORAGE_KEY)
+    setConfirmClear(false)
   }
 
   const rightMessages = useMemo(() => messages, [messages])
 
-  const panelTitle = (icon: React.ReactNode, title: string, sub: string) => (
+  const panelTitle = (icon: ReactNode, title: string, sub: string) => (
     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-      {/* SplitText page-title treatment applied to panel headers */}
       <span
         style={{
           display: "inline-flex",
@@ -461,6 +547,29 @@ export default function ConversationPage() {
     overflow: "hidden",
   }
 
+  const renderMessages = (sideFilter: "all" | "left" | "right") => {
+    const list = sideFilter === "all" ? rightMessages : rightMessages.filter((m) => m.side === sideFilter)
+    if (list.length === 0) {
+      return (
+        <p style={{ margin: "auto", color: COLORS.textDim, fontSize: 14 }}>
+          {sideFilter === "all"
+            ? "Hold the mic and speak, or type below."
+            : "Sent messages will appear here — tap a pictogram to start."}
+        </p>
+      )
+    }
+    return list.map((m) => (
+      <div key={m.id} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        <MessageCard msg={m} onSpeak={handleSpeakMessage} />
+        {m.side === "left" && m.status && (
+          <span style={{ alignSelf: "flex-end", display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, color: COLORS.textDim }}>
+            {m.status === "queued" ? "queued" : <StatusTicks status={m.status} />}
+          </span>
+        )}
+      </div>
+    ))
+  }
+
   return (
     <div
       style={{
@@ -473,26 +582,78 @@ export default function ConversationPage() {
     >
       <TopNav
         right={
-          <>              <AuroraButton
-                type="button"
-                onClick={handleClearChat}
-                variant="ghost"
-                aria-label="Clear the conversation"
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 7,
-                  height: 44,
-                  padding: "8px 16px",
-                  fontSize: 14,
-                  fontFamily: FONT,
-                }}
-              >
-                <Trash2 size={15} strokeWidth={2.4} aria-hidden="true" /> Clear
-              </AuroraButton>
+          <>
+            <AuroraButton
+              type="button"
+              onClick={handleExportPdf}
+              variant="ghost"
+              aria-label="Export the conversation as PDF"
+              style={{ display: "inline-flex", alignItems: "center", gap: 7, height: 44, padding: "8px 16px", fontSize: 14, fontFamily: FONT }}
+            >
+              <FileDown size={15} strokeWidth={2.4} aria-hidden="true" /> PDF
+            </AuroraButton>
+            <AuroraButton
+              type="button"
+              onClick={handleClearChat}
+              variant="ghost"
+              aria-label="Clear the conversation"
+              style={{ display: "inline-flex", alignItems: "center", gap: 7, height: 44, padding: "8px 16px", fontSize: 14, fontFamily: FONT }}
+            >
+              <Trash2 size={15} strokeWidth={2.4} aria-hidden="true" /> Clear
+            </AuroraButton>
           </>
         }
       />
+
+      {/* Clear-conversation confirm dialog */}
+      <AnimatePresence>
+        {confirmClear && (
+          <motion.div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Confirm clear conversation"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 80,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background: "rgba(0,0,0,0.6)",
+              padding: 20,
+            }}
+            onKeyDown={(e) => e.key === "Escape" && setConfirmClear(false)}
+          >
+            <div
+              style={{
+                background: "#131722",
+                border: `1px solid ${COLORS.borderGlass}`,
+                borderRadius: RADIUS.lg,
+                padding: 24,
+                maxWidth: 380,
+                width: "100%",
+                boxShadow: SHADOW.lg,
+              }}
+            >
+              <h3 style={{ margin: "0 0 8", fontSize: 18, fontWeight: 800 }}>Clear this conversation?</h3>
+              <p style={{ margin: "0 0 16", fontSize: 14, color: COLORS.textDim }}>
+                Messages on this screen will be removed. Saved history is kept.
+              </p>
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                <button type="button" className="btn-ghost" onClick={() => setConfirmClear(false)} style={{ minHeight: 44, padding: "0 16px", fontSize: 14 }}>
+                  Cancel
+                </button>
+                <button type="button" className="btn-gradient" onClick={doClear} style={{ minHeight: 44, padding: "0 16px", fontSize: 14 }}>
+                  Clear
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <main
         style={{
@@ -512,36 +673,15 @@ export default function ConversationPage() {
           style={panelStyle}
           aria-label="Non-verbal user panel"
         >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 10,
-              flexWrap: "wrap",
-              padding: "14px 18px",
-              borderBottom: `1px solid ${COLORS.borderGlass}`,
-            }}
-          >
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap", padding: "14px 18px", borderBottom: `1px solid ${COLORS.borderGlass}` }}>
             {panelTitle(<Hand size={20} />, "Non-verbal User", "Tap pictograms to speak")}
-            <span
-              style={{
-                fontSize: 12,
-                fontWeight: 800,
-                letterSpacing: 1,
-                color: COLORS.accentBright,
-                background: COLORS.accentSoft,
-                border: `1px solid rgba(0, 180, 216, 0.4)`,
-                borderRadius: RADIUS.pill,
-                padding: "4px 10px",
-              }}
-            >
+            <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: 1, color: COLORS.accentBright, background: COLORS.accentSoft, border: `1px solid rgba(0, 180, 216, 0.4)`, borderRadius: RADIUS.pill, padding: "4px 10px" }}>
               LEFT
             </span>
           </div>
 
           {/* Sign avatar popup (incoming from RIGHT) */}
-          <div style={{ position: "relative", minHeight: 96, borderBottom: `1px solid ${COLORS.borderGlass}` }}>
+          <div style={{ position: "relative", minHeight: 150, borderBottom: `1px solid ${COLORS.borderGlass}` }}>
             <AnimatePresence>
               {signPopup && (
                 <motion.div
@@ -558,38 +698,19 @@ export default function ConversationPage() {
                     flexDirection: "column",
                     alignItems: "center",
                     justifyContent: "center",
-                    gap: 6,
-                    padding: 12,
-                    background:
-                      "radial-gradient(circle at 50% 30%, rgba(124, 58, 237, 0.16), rgba(10, 25, 41, 0.4))",
+                    gap: 2,
+                    padding: 8,
+                    background: "radial-gradient(circle at 50% 30%, rgba(124, 58, 237, 0.16), rgba(10, 25, 41, 0.4))",
                     overflow: "hidden",
                   }}
                 >
-                  <SignAvatar
-                    text={signPopup.text}
-                    onComplete={closeSignPopup}
-                    size={110}
-                  />
-                  <p style={{ margin: 0, fontSize: 15, fontWeight: 700, textAlign: "center" }}>
-                    “{signPopup.text}”
-                  </p>
+                  <SignAvatar text={signPopup.text} onComplete={closeSignPopup} size={96} />
+                  <p style={{ margin: 0, fontSize: 14, fontWeight: 700, textAlign: "center" }}>“{signPopup.text}”</p>
                 </motion.div>
               )}
             </AnimatePresence>
             {!signPopup && (
-              <div
-                style={{
-                  position: "absolute",
-                  inset: 0,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 8,
-                  color: COLORS.textDim,
-                  fontSize: 13.5,
-                  fontWeight: 600,
-                }}
-              >
+              <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, color: COLORS.textDim, fontSize: 13.5, fontWeight: 600 }}>
                 <Ear size={16} aria-hidden="true" /> Sign avatar appears here for spoken replies
               </div>
             )}
@@ -597,64 +718,53 @@ export default function ConversationPage() {
 
           {/* Chat stream */}
           <div
+            ref={chatScrollRef}
             role="list"
             aria-label="Conversation messages"
             style={{
               flex: 1,
               minHeight: 180,
-              maxHeight: 320,
+              maxHeight: 340,
               overflowY: "auto",
               display: "flex",
               flexDirection: "column",
               gap: 10,
               padding: "14px 16px",
+              position: "relative",
             }}
           >
-            {rightMessages.length === 0 ? (
-              <p style={{ margin: "auto", color: COLORS.textDim, fontSize: 14 }}>
-                Sent messages will appear here — tap a pictogram to start.
-              </p>
-            ) : (
-              rightMessages.map((m) => (
-                <MessageCard key={m.id} msg={m} onSpeak={handleSpeakMessage} />
-              ))
-            )}
-            <div ref={chatEndRefLeft} />
+            {renderMessages("all")}
+            <div ref={chatEndRef} />
           </div>
 
-          {/* Pictogram grid (2x3 compact) + send */}
-          <div
-            style={{
-              padding: "12px 16px 16px",
-              display: "flex",
-              flexDirection: "column",
-              gap: 10,
-              borderTop: `1px solid ${COLORS.borderGlass}`,
-            }}
-          >
-            <PictogramGrid
-              selected={selected}
-              onSelect={handleQuickTap}
-              columns={3}
-              compact
-            />
+          {/* Jump to newest */}
+          {showJump && (
+            <button
+              type="button"
+              onClick={() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" })}
+              className="btn-ghost"
+              aria-label="Jump to the newest message"
+              style={{ margin: "0 16px 8", minHeight: 40, fontSize: 13, borderRadius: RADIUS.pill }}
+            >
+              ↓ Jump to newest
+            </button>
+          )}
+
+          {/* Typing indicator */}
+          <div style={{ minHeight: 22, padding: "0 16px", fontSize: 13, fontWeight: 700, color: COLORS.accentBright }} role="status" aria-live="polite">
+            {guardianTyping ? `${guardianTyping} is typing…` : ""}
+          </div>
+
+          {/* Pictogram grid + send */}
+          <div style={{ padding: "12px 16px 16px", display: "flex", flexDirection: "column", gap: 10, borderTop: `1px solid ${COLORS.borderGlass}` }}>
+            <PictogramGrid selected={selected} onSelect={handleQuickTap} columns={3} compact />
             <div style={{ display: "flex", gap: 8 }}>
               <AuroraButton
                 type="button"
                 onClick={handleSendPictos}
                 disabled={selected.length === 0}
                 variant="primary"
-                style={{
-                  flex: 1,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 8,
-                  minHeight: TAP_MIN,
-                  height: "auto",
-                  fontSize: 16,
-                  fontFamily: FONT,
-                }}
+                style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, minHeight: TAP_MIN, height: "auto", fontSize: 16, fontFamily: FONT }}
               >
                 <Send size={17} strokeWidth={2.5} aria-hidden="true" />
                 Send{selected.length > 0 ? ` (${selected.length})` : ""}
@@ -665,27 +775,11 @@ export default function ConversationPage() {
                 disabled={selected.length === 0}
                 className="btn-ghost"
                 aria-label="Clear selected pictograms"
-                style={{
-                  minHeight: TAP_MIN,
-                  padding: "0 16px",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  fontFamily: FONT,
-                }}
+                style={{ minHeight: TAP_MIN, padding: "0 16px", display: "inline-flex", alignItems: "center", fontFamily: FONT }}
               >
                 <Trash2 size={16} aria-hidden="true" />
               </button>
-              <span
-                aria-hidden="true"
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  fontSize: 12.5,
-                  color: COLORS.textDim,
-                  fontWeight: 600,
-                  padding: "0 4px",
-                }}
-              >
+              <span aria-hidden="true" style={{ display: "inline-flex", alignItems: "center", fontSize: 12.5, color: COLORS.textDim, fontWeight: 600, padding: "0 4px" }}>
                 tap = instant send
               </span>
             </div>
@@ -700,95 +794,53 @@ export default function ConversationPage() {
           style={panelStyle}
           aria-label="Hearing person panel"
         >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 10,
-              flexWrap: "wrap",
-              padding: "14px 18px",
-              borderBottom: `1px solid ${COLORS.borderGlass}`,
-            }}
-          >
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap", padding: "14px 18px", borderBottom: `1px solid ${COLORS.borderGlass}` }}>
             {panelTitle(<Ear size={20} />, "Hearing Person", "Hold the mic and speak")}
-            <span
-              style={{
-                fontSize: 12,
-                fontWeight: 800,
-                letterSpacing: 1,
-                color: "#C4B5FD",
-                background: "rgba(124, 58, 237, 0.14)",
-                border: `1px solid rgba(124, 58, 237, 0.4)`,
-                borderRadius: RADIUS.pill,
-                padding: "4px 10px",
-              }}
-            >
+            <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: 1, color: "#C4B5FD", background: "rgba(124, 58, 237, 0.14)", border: `1px solid rgba(124, 58, 237, 0.4)`, borderRadius: RADIUS.pill, padding: "4px 10px" }}>
               RIGHT
             </span>
           </div>
 
-          {/* Chat stream */}
+          {/* Chat stream (right view) */}
           <div
             role="list"
             aria-label="Conversation messages"
-            style={{
-              flex: 1,
-              minHeight: 200,
-              maxHeight: 420,
-              overflowY: "auto",
-              display: "flex",
-              flexDirection: "column",
-              gap: 10,
-              padding: "14px 16px",
-            }}
+            style={{ flex: 1, minHeight: 200, maxHeight: 420, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10, padding: "14px 16px" }}
           >
-            {messages.length === 0 ? (
-              <p style={{ margin: "auto", color: COLORS.textDim, fontSize: 14 }}>
-                Hold the mic and speak, or type below.
-              </p>
-            ) : (
-              messages.map((m) => (
-                <MessageCard key={m.id} msg={m} onSpeak={handleSpeakMessage} />
-              ))
+            {renderMessages("all")}
+            {guardianTyping && (
+              <motion.span
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                style={{ alignSelf: "flex-start", fontSize: 13, fontWeight: 700, color: COLORS.accentBright }}
+              >
+                {guardianTyping} is typing…
+              </motion.span>
             )}
-            <div ref={chatEndRefRight} />
           </div>
 
           {/* Composer: language + mic + input */}
-          <div
-            style={{
-              padding: "14px 16px 16px",
-              display: "flex",
-              flexDirection: "column",
-              gap: 10,
-              borderTop: `1px solid ${COLORS.borderGlass}`,
-            }}
-          >
+          <div style={{ padding: "14px 16px 16px", display: "flex", flexDirection: "column", gap: 10, borderTop: `1px solid ${COLORS.borderGlass}` }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
               <Languages size={16} color={COLORS.accentBright} aria-hidden="true" />
               <select
                 value={lang}
-                onChange={(e) => setLang(e.target.value as LanguageCode)}
-                aria-label="Speech language"
-                style={{
-                  flex: 1,
-                  minWidth: 150,
-                  minHeight: TAP_MIN,
-                  background: "rgba(10, 25, 41, 0.6)",
-                  color: COLORS.text,
-                  border: `1px solid ${COLORS.borderGlass}`,
-                  borderRadius: RADIUS.md,
-                  padding: "8px 12px",
-                  fontSize: 15,
-                  fontFamily: FONT,
+                onChange={(e) => {
+                  setLang(e.target.value as LanguageCode)
+                  announce(`Language set to ${e.target.selectedOptions[0]?.text ?? e.target.value}`)
                 }}
+                aria-label="Speech language"
+                style={{ flex: 1, minWidth: 150, minHeight: TAP_MIN, background: "rgba(10, 25, 41, 0.6)", color: COLORS.text, border: `1px solid ${COLORS.borderGlass}`, borderRadius: RADIUS.md, padding: "8px 12px", fontSize: 15, fontFamily: FONT }}
               >
-                {LANGUAGES.map((l) => (
-                  <option key={l.code} value={l.code}>
-                    {l.label}
-                  </option>
-                ))}
+                {LANGUAGES.map((l) => {
+                  const supported = speechSupported && isLanguageSupported(l.code)
+                  return (
+                    <option key={l.code} value={l.code} disabled={!supported && l.code !== "en"} title={supported ? undefined : "Not supported by your browser"}>
+                      {l.label}
+                      {supported || l.code === "en" ? "" : " — not supported"}
+                    </option>
+                  )
+                })}
               </select>
             </div>
 
@@ -796,138 +848,104 @@ export default function ConversationPage() {
               <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
                 {/* Hold-to-record mic */}
                 <motion.button
-                type="button"
-                onPointerDown={(e) => {
-                  e.preventDefault()
-                  startListening()
-                }}
-                onPointerUp={(e) => {
-                  e.preventDefault()
-                  stopListening()
-                }}
-                onPointerLeave={() => listening && stopListening()}
-                disabled={!speechSupported}
-                whileTap={{ scale: 0.94 }}
-                animate={
-                  listening
-                    ? { scale: [1, 1.05, 1], boxShadow: [
-                        "0 0 0 0 rgba(239, 68, 68, 0.5)",
-                        "0 0 0 18px rgba(239, 68, 68, 0)",
-                      ] }
-                    : { scale: 1, boxShadow: "0 8px 24px rgba(0, 180, 216, 0.35)" }
-                }
-                transition={
-                  listening
-                    ? { scale: { repeat: Infinity, duration: 1.2 }, boxShadow: { repeat: Infinity, duration: 1.2 } }
-                    : { duration: 0.2 }
-                }
-                aria-label={listening ? "Release to stop recording" : "Hold to record speech"}
-                aria-pressed={listening}
-                style={{
-                  width: 72,
-                  height: 72,
-                  borderRadius: "50%",
-                  flexShrink: 0,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  background: listening
-                    ? `radial-gradient(circle at 30% 30%, #F87171, ${COLORS.danger})`
-                    : `linear-gradient(135deg, ${COLORS.accentBright}, ${COLORS.accentDeep})`,
-                  color: "#04121F",
-                  border: "none",
-                  cursor: speechSupported ? "pointer" : "not-allowed",
-                  opacity: speechSupported ? 1 : 0.5,
-                  touchAction: "none",
-                  fontFamily: FONT,
-                }}
-              >
-                {listening ? (
-                  <MicOff size={30} strokeWidth={2.6} aria-hidden="true" />
-                ) : (
-                  <Mic size={30} strokeWidth={2.6} aria-hidden="true" />
-                )}
-              </motion.button>
-
-                {/* Mic level bars (5) — live input amplitude */}
-                <div
-                  aria-hidden="true"
+                  type="button"
+                  onPointerDown={(e) => {
+                    e.preventDefault()
+                    startListening()
+                  }}
+                  onPointerUp={(e) => {
+                    e.preventDefault()
+                    stopListening()
+                  }}
+                  onPointerLeave={() => listening && stopListening()}
+                  disabled={!speechSupported}
+                  whileTap={{ scale: 0.94 }}
+                  animate={
+                    listening
+                      ? { scale: [1, 1.05, 1], boxShadow: ["0 0 0 0 rgba(239, 68, 68, 0.5)", "0 0 0 18px rgba(239, 68, 68, 0)"] }
+                      : { scale: 1, boxShadow: "0 8px 24px rgba(0, 180, 216, 0.35)" }
+                  }
+                  transition={listening ? { scale: { repeat: Infinity, duration: 1.2 }, boxShadow: { repeat: Infinity, duration: 1.2 } } : { duration: 0.2 }}
+                  aria-label={listening ? "Release to stop recording" : "Hold to record speech"}
+                  aria-pressed={listening}
                   style={{
-                    display: "flex",
-                    alignItems: "flex-end",
-                    gap: 3,
-                    height: 40,
+                    width: 72,
+                    height: 72,
+                    borderRadius: "50%",
                     flexShrink: 0,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    background: listening ? `radial-gradient(circle at 30% 30%, #F87171, ${COLORS.danger})` : `linear-gradient(135deg, ${COLORS.accentBright}, ${COLORS.accentDeep})`,
+                    color: "#04121F",
+                    border: "none",
+                    cursor: speechSupported ? "pointer" : "not-allowed",
+                    opacity: speechSupported ? 1 : 0.5,
+                    touchAction: "none",
+                    fontFamily: FONT,
                   }}
                 >
-                  {BAR_STEPS.map((step, i) => {
+                  {listening ? <MicOff size={30} strokeWidth={2.6} aria-hidden="true" /> : <Mic size={30} strokeWidth={2.6} aria-hidden="true" />}
+                </motion.button>
+
+                {/* Mic level bars (5) + VAD dot */}
+                <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 40, flexShrink: 0 }} aria-hidden="true">
+                  {[0.06, 0.22, 0.4, 0.58, 0.78].map((step, i) => {
                     const active = listening && micLevel >= step
                     return (
                       <motion.span
                         key={i}
-                        animate={{
-                          height: active ? 12 + i * 6 : 8,
-                          backgroundColor: active ? COLORS.accentBright : "rgba(148, 163, 184, 0.3)",
-                        }}
+                        animate={{ height: active ? 12 + i * 6 : 8, backgroundColor: active ? COLORS.accentBright : "rgba(148, 163, 184, 0.3)" }}
                         transition={{ duration: 0.12 }}
-                        style={{
-                          width: 6,
-                          borderRadius: 3,
-                          display: "inline-block",
-                        }}
+                        style={{ width: 6, borderRadius: 3, display: "inline-block" }}
                       />
                     )
                   })}
                 </div>
+                {listening && (
+                  <span
+                    role="status"
+                    aria-label={speechActive ? "Speech detected" : "Silence — noise only"}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 5,
+                      fontSize: 11,
+                      fontWeight: 800,
+                      color: speechActive ? COLORS.success : COLORS.textDim,
+                    }}
+                  >
+                    <motion.span
+                      animate={{ opacity: speechActive ? [1, 0.3, 1] : 0.3 }}
+                      transition={{ repeat: Infinity, duration: 1 }}
+                      style={{ width: 8, height: 8, borderRadius: "50%", background: speechActive ? COLORS.success : "rgba(148,163,184,0.5)", display: "inline-block" }}
+                    />
+                    {speechActive ? "VOICE" : "noise"}
+                  </span>
+                )}
               </div>
 
               <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
-                <div
-                  role="status"
-                  aria-live="polite"
-                  style={{
-                    minHeight: 22,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    flexWrap: "wrap",
-                    fontSize: 13.5,
-                    fontWeight: 700,
-                    color: listening ? COLORS.danger : COLORS.textDim,
-                  }}
-                >
-                  {listening
-                    ? "● Recording… release to send"
-                    : speechSupported
-                      ? "Hold the mic to record"
-                      : "Speech recognition not supported in this browser — use text input"}
+                <div role="status" aria-live="polite" style={{ minHeight: 22, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 13.5, fontWeight: 700, color: listening ? COLORS.danger : COLORS.textDim }}>
+                  {listening ? "● Listening… release to send" : speechSupported ? "Hold the mic to record" : "Voice not supported here — use text input"}
                   {speechConfidence != null && !listening && (
                     <span
                       aria-label={`Speech confidence ${Math.round(speechConfidence * 100)} percent`}
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        fontSize: 11,
-                        fontWeight: 800,
-                        color: asrConfColor(speechConfidence),
-                        background:
-                          speechConfidence > 0.8
-                            ? COLORS.successSoft
-                            : speechConfidence >= 0.5
-                              ? "rgba(250, 204, 21, 0.14)"
-                              : COLORS.dangerSoft,
-                        border: `1px solid ${asrConfColor(speechConfidence)}`,
-                        borderRadius: RADIUS.pill,
-                        padding: "1px 8px",
-                        fontVariantNumeric: "tabular-nums",
-                      }}
+                      style={{ display: "inline-flex", alignItems: "center", fontSize: 11, fontWeight: 800, color: asrConfColor(speechConfidence), background: speechConfidence > 0.8 ? COLORS.successSoft : speechConfidence >= 0.5 ? "rgba(250, 204, 21, 0.14)" : COLORS.dangerSoft, border: `1px solid ${asrConfColor(speechConfidence)}`, borderRadius: RADIUS.pill, padding: "1px 8px", fontVariantNumeric: "tabular-nums" }}
                     >
                       {Math.round(speechConfidence * 100)}% confidence
                     </span>
                   )}
                 </div>
 
-                {/* Noise warning (auto-fades) */}
+                {/* Live interim transcript */}
+                {listening && interim && (
+                  <p style={{ margin: 0, fontSize: 15, fontWeight: 600, color: COLORS.textDim, fontStyle: "italic" }} aria-live="polite">
+                    {interim}…
+                  </p>
+                )}
+
+                {/* Noise warning */}
                 <AnimatePresence>
                   {noisy && (
                     <motion.p
@@ -936,67 +954,36 @@ export default function ConversationPage() {
                       exit={{ opacity: 0 }}
                       transition={{ duration: 0.3 }}
                       role="alert"
-                      style={{
-                        margin: 0,
-                        fontSize: 13,
-                        fontWeight: 800,
-                        color: COLORS.warning,
-                      }}
+                      style={{ margin: 0, fontSize: 13, fontWeight: 800, color: COLORS.warning }}
                     >
-                      🔊 Too noisy — try a quieter place
+                      🔊 Noisy environment — speak closer to the mic or move somewhere quieter
                     </motion.p>
                   )}
                 </AnimatePresence>
 
-                {/* Low-confidence correction */}
+                {/* Low-confidence alternatives ("Did you mean?") */}
                 <AnimatePresence>
-                  {suggestion !== null && (
+                  {lowConfAlternatives && (
                     <motion.div
                       initial={{ opacity: 0, y: -4 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0 }}
                       transition={{ duration: 0.25 }}
+                      role="alert"
                       style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}
                     >
-                      <span style={{ fontSize: 13, fontWeight: 800, color: COLORS.warning }}>
-                        Did you mean?
-                      </span>
-                      <input
-                        type="text"
-                        value={suggestion}
-                        onChange={(e) => setSuggestion(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") handleSendSuggestion()
-                        }}
-                        aria-label="Corrected transcript"
-                        style={{
-                          flex: 1,
-                          minWidth: 140,
-                          minHeight: 40,
-                          background: "rgba(10, 25, 41, 0.6)",
-                          color: COLORS.text,
-                          border: `1px solid rgba(250, 204, 21, 0.5)`,
-                          borderRadius: RADIUS.md,
-                          padding: "8px 12px",
-                          fontSize: 14,
-                          fontFamily: FONT,
-                        }}
-                      />
-                      <button
-                        type="button"
-                        onClick={handleSendSuggestion}
-                        className="btn-ghost"
-                        style={{
-                          minHeight: TAP_MIN,
-                          padding: "0 14px",
-                          display: "inline-flex",
-                          alignItems: "center",
-                          fontSize: 14,
-                          fontFamily: FONT,
-                        }}
-                      >
-                        <Send size={15} strokeWidth={2.5} aria-hidden="true" />
-                      </button>
+                      <span style={{ fontSize: 13, fontWeight: 800, color: COLORS.warning }}>Did you mean:</span>
+                      {lowConfAlternatives.slice(0, 3).map((alt) => (
+                        <button
+                          key={alt}
+                          type="button"
+                          onClick={() => handleSendTyped(alt)}
+                          className="btn-ghost"
+                          style={{ minHeight: 40, padding: "0 12px", fontSize: 13, color: COLORS.accentBright, borderColor: "rgba(250, 204, 21, 0.5)" }}
+                        >
+                          {alt}
+                        </button>
+                      ))}
                     </motion.div>
                   )}
                 </AnimatePresence>
@@ -1011,34 +998,15 @@ export default function ConversationPage() {
                     }}
                     placeholder="Type a message…"
                     aria-label="Type a message"
-                    style={{
-                      flex: 1,
-                      minWidth: 0,
-                      minHeight: TAP_MIN,
-                      background: "rgba(10, 25, 41, 0.6)",
-                      color: COLORS.text,
-                      border: `1px solid ${COLORS.borderGlass}`,
-                      borderRadius: RADIUS.md,
-                      padding: "10px 14px",
-                      fontSize: 16,
-                      fontFamily: FONT,
-                    }}
+                    style={{ flex: 1, minWidth: 0, minHeight: TAP_MIN, background: "rgba(10, 25, 41, 0.6)", color: COLORS.text, border: `1px solid ${COLORS.borderGlass}`, borderRadius: RADIUS.md, padding: "10px 14px", fontSize: 16, fontFamily: FONT }}
                   />
                   <AuroraButton
                     type="button"
-                    onClick={handleSendTyped}
+                    onClick={() => handleSendTyped()}
                     disabled={!typed.trim()}
                     variant="primary"
                     aria-label="Send typed message"
-                    style={{
-                      width: TAP_MIN,
-                      height: TAP_MIN,
-                      padding: 0,
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontFamily: FONT,
-                    }}
+                    style={{ width: TAP_MIN, height: TAP_MIN, padding: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", fontFamily: FONT }}
                   >
                     <Send size={18} strokeWidth={2.5} aria-hidden="true" />
                   </AuroraButton>
@@ -1056,4 +1024,8 @@ export default function ConversationPage() {
       </main>
     </div>
   )
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] ?? c)
 }

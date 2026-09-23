@@ -1,28 +1,21 @@
-// Cross-device message bus for VaakSetu.
-// Powered by Socket.IO — works across ALL devices connected to the same backend.
+/** Cross-device message bus for VaakSetu.
+ * Powered by Socket.IO — works across ALL devices connected to the same backend.
+ */
 
 import { io, Socket } from 'socket.io-client'
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001'
-
-/** REST base — same origin as the socket, used for persistence + hydration. */
-const REST_URL = API_URL.replace(/\/$/, '')
+import { SOCKET_URL, apiFetch } from './api'
 
 /** Persist a message via the backend REST API (fire-and-forget). */
 function persistToApi(payload: WireShape): void {
-  fetch(`${REST_URL}/api/messages`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  }).catch((err) => console.warn('[messageBus] REST persist failed:', err))
+  apiFetch('/api/messages', { method: 'POST', body: JSON.stringify(payload) }).catch((err) =>
+    console.warn('[messageBus] REST persist failed:', err),
+  )
 }
 
 /** Hydrate recent messages from the backend on page load. */
 export async function fetchHistory(limit = 50): Promise<VaakSetuMessage[]> {
   try {
-    const res = await fetch(`${REST_URL}/api/messages?limit=${limit}`)
-    if (!res.ok) return []
-    const raw = (await res.json()) as unknown[]
+    const raw = await apiFetch<unknown[]>(`/api/messages?limit=${limit}`)
     return raw
       .map((r) => fromWire(r))
       .filter((m): m is VaakSetuMessage => m !== null)
@@ -36,12 +29,8 @@ export async function fetchHistory(limit = 50): Promise<VaakSetuMessage[]> {
 /** Fetch a specific user's messages (History tab). */
 export async function fetchUserMessages(userId: string, limit = 50): Promise<VaakSetuMessage[]> {
   try {
-    const res = await fetch(`${REST_URL}/api/messages?userId=${encodeURIComponent(userId)}&limit=${limit}`)
-    if (!res.ok) return []
-    const raw = (await res.json()) as unknown[]
-    return raw
-      .map((r) => fromWire(r))
-      .filter((m): m is VaakSetuMessage => m !== null)
+    const raw = await apiFetch<unknown[]>(`/api/messages?userId=${encodeURIComponent(userId)}&limit=${limit}`)
+    return raw.map((r) => fromWire(r)).filter((m): m is VaakSetuMessage => m !== null)
   } catch (err) {
     console.warn('[messageBus] fetchUserMessages failed:', err)
     return []
@@ -51,10 +40,8 @@ export async function fetchUserMessages(userId: string, limit = 50): Promise<Vaa
 /** DELETE /api/messages?userId=X — clear a user's persisted history. */
 export async function deleteUserMessages(userId: string): Promise<boolean> {
   try {
-    const res = await fetch(`${REST_URL}/api/messages?userId=${encodeURIComponent(userId)}`, {
-      method: 'DELETE',
-    })
-    return res.ok
+    await apiFetch(`/api/messages?userId=${encodeURIComponent(userId)}`, { method: 'DELETE' })
+    return true
   } catch {
     return false
   }
@@ -63,12 +50,11 @@ export async function deleteUserMessages(userId: string): Promise<boolean> {
 /** POST /api/replies — persist a guardian reply. */
 export async function postReply(text: string, userId: string, messageId?: string): Promise<boolean> {
   try {
-    const res = await fetch(`${REST_URL}/api/replies`, {
+    await apiFetch('/api/replies', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text, userId, messageId }),
     })
-    return res.ok
+    return true
   } catch {
     return false
   }
@@ -77,9 +63,7 @@ export async function postReply(text: string, userId: string, messageId?: string
 /** PATCH /api/messages/:id/delivered — mark a message as delivered. */
 export async function markDelivered(id: string): Promise<void> {
   try {
-    await fetch(`${REST_URL}/api/messages/${encodeURIComponent(id)}/delivered`, {
-      method: 'PATCH',
-    })
+    await apiFetch(`/api/messages/${encodeURIComponent(id)}/delivered`, { method: 'PATCH' })
   } catch {
     /* best-effort */
   }
@@ -96,9 +80,7 @@ export interface AdminStats {
 
 export async function fetchAdminStats(days = 7): Promise<AdminStats | null> {
   try {
-    const res = await fetch(`${REST_URL}/api/admin/stats?days=${days}`)
-    if (!res.ok) return null
-    return (await res.json()) as AdminStats
+    return await apiFetch<AdminStats>(`/api/admin/stats?days=${days}`)
   } catch {
     return null
   }
@@ -109,9 +91,7 @@ export async function fetchAdminTimeline(
   days = 7,
 ): Promise<{ day: string; count: number }[] | null> {
   try {
-    const res = await fetch(`${REST_URL}/api/admin/timeline?days=${days}`)
-    if (!res.ok) return null
-    return (await res.json()) as { day: string; count: number }[]
+    return await apiFetch<{ day: string; count: number }[]>(`/api/admin/timeline?days=${days}`)
   } catch {
     return null
   }
@@ -294,12 +274,12 @@ function handleIncoming(raw: unknown): void {
 function ensureSocket(): Socket {
   if (socket) return socket
 
-  socket = io(API_URL, {
+  socket = io(SOCKET_URL ?? window.location.origin, {
     transports: ['websocket', 'polling'],
     reconnection: true,
     reconnectionAttempts: Infinity,
     reconnectionDelay: 1000,
-    reconnectionDelayMax: 5000
+    reconnectionDelayMax: 5000,
   })
 
   socket.on(SOCKET_EVENTS.NEW, handleIncoming)
@@ -313,7 +293,7 @@ function ensureSocket(): Socket {
   })
 
   socket.on('connect', () => {
-    console.log('[messageBus] Connected to backend:', API_URL)
+    console.log('[messageBus] Connected to backend:', SOCKET_URL ?? 'same-origin')
   })
 
   socket.on('disconnect', (reason) => {
@@ -330,6 +310,11 @@ function ensureSocket(): Socket {
 ensureSocket()
 
 // ── Public API — MUST match what pages import ─────────────────────
+
+/** Expose the singleton socket for typing indicators + status relays. */
+export function getSocket(): Socket | null {
+  return socket
+}
 
 /**
  * Subscribe to incoming messages.

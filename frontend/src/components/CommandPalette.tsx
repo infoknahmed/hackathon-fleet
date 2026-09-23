@@ -12,6 +12,12 @@ import {
   Database,
   Copy,
   RotateCcw,
+  Mic,
+  Ear,
+  Volume2,
+  MessageSquareQuote,
+  History,
+  Dumbbell,
 } from "lucide-react"
 import { startDemo } from "../lib/demoRunner"
 
@@ -20,7 +26,13 @@ const ROUTES = [
   { to: "/guardian", label: "Guardian", hint: "Live message feed + replies", icon: HeartHandshake },
   { to: "/admin", label: "Admin", hint: "Platform analytics", icon: ShieldCheck },
   { to: "/conversation", label: "Conversation", hint: "Two-way talk: signs + voice", icon: MessagesSquare },
-  { to: "/sign", label: "Sign", hint: "ISL sign language practice", icon: Hand },
+  { to: "/sign", label: "Sign Recognition", hint: "20-gesture camera recognition", icon: Hand },
+  { to: "/sign-practice", label: "Sign Practice", hint: "Drill gestures, earn the Gesture Master badge", icon: Dumbbell },
+  { to: "/speech", label: "Speech to Text", hint: "Live multilingual transcription", icon: Mic },
+  { to: "/text-to-sign", label: "Text to Sign", hint: "Animated sign avatar for any text", icon: Ear },
+  { to: "/voices", label: "Voices", hint: "System voice inventory + test phrases", icon: Volume2 },
+  { to: "/phrases", label: "My Phrases", hint: "Quick access to your most-used sentences", icon: MessageSquareQuote },
+  { to: "/history", label: "History", hint: "Searchable synced conversation history", icon: History },
   { to: "/database", label: "Database", hint: "Browse stored messages", icon: Database },
 ]
 

@@ -19,3 +19,9 @@ backend/data/
 
 # SQLite runtime files
 backend/data/
+
+.freebuff/
+
+.vercel-stage/
+
+frontend/.vercel-stage/

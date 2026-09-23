@@ -56,13 +56,21 @@ export function waitForVoices(maxMs = 2000): Promise<SpeechSynthesisVoice[]> {
 
 /* ── Language → voice selection with graceful degradation ──────── */
 
-/** Priority-ordered BCP-47 codes per app language. */
+/** Priority-ordered BCP-47 codes per app language (8 Indian languages). */
 export const LANGUAGE_VOICE_MAP: Record<string, string[]> = {
   en: ["en-IN", "en-US", "en-GB"],
-  hi: ["hi-IN", "hi"],
-  kn: ["kn-IN", "kn"],
-  te: ["te-IN", "te"],
-  ta: ["ta-IN", "ta"],
+  hi: ["hi-IN"],
+  kn: ["kn-IN"],
+  te: ["te-IN"],
+  ta: ["ta-IN"],
+  mr: ["mr-IN"],
+  bn: ["bn-IN"],
+  ml: ["ml-IN"],
+}
+
+/** Whether each recognition/synthesis language has any voice present. */
+export function isLanguageSupported(lang: string): boolean {
+  return hasNativeVoice(lang) || lang === "en"
 }
 
 /**

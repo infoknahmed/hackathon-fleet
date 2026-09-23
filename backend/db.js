@@ -39,6 +39,14 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_replies_user_created ON replies(user_id, created_at DESC);
 `);
 
+// Migration: older databases may predate the `delivered` column.
+try {
+  db.prepare('SELECT delivered FROM messages LIMIT 1').get();
+} catch {
+  db.exec('ALTER TABLE messages ADD COLUMN delivered INTEGER DEFAULT 0;');
+  console.log('[db] migrated: added messages.delivered column');
+}
+
 const insertMsgStmt = db.prepare(`
   INSERT INTO messages (id, timestamp, user_id, role, content, confidence, lang, emergency, created_at)
   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)

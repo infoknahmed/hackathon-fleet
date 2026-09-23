@@ -1,0 +1,15 @@
+# Render blueprint — VaakSetu backend (Express + Socket.IO + SQLite)
+# Deploy: Render Dashboard → New → Blueprint → point at this repo, or
+# `render blueprint launch` from the repo root.
+services:
+  - type: web
+    name: vaaksetu-api
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: cd backend && npm install
+    startCommand: node backend/server.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"

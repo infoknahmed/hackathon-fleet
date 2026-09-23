@@ -22,16 +22,27 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
-        maximumFileSizeToCacheInBytes: 5000000,
+        globPatterns: ['**/*.{js,css,html,svg,png,woff2,json,bin,task,wasm}'],
+        maximumFileSizeToCacheInBytes: 8000000,
         runtimeCaching: [
           {
-            urlPattern: /^http:\/\/localhost:3001\/.*/i,
+            // API: network-first with cache fallback for offline history.
+            urlPattern: /\/api\/.*/i,
             handler: 'NetworkFirst',
             options: {
               cacheName: 'vaaksetu-api',
               networkTimeoutSeconds: 5,
-              expiration: { maxEntries: 50, maxAgeSeconds: 3600 },
+              expiration: { maxEntries: 100, maxAgeSeconds: 86400 * 7 },
+            },
+          },
+          {
+            // MediaPipe WASM + model assets (CDN) — cache-first, they never change.
+            urlPattern: /mediapipe|cdn\.jsdelivr\.net|storage\.googleapis\.com/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'vaaksetu-vision-models',
+              expiration: { maxEntries: 30, maxAgeSeconds: 86400 * 30 },
+              cacheableResponse: { statuses: [0, 200] },
             },
           },
         ],

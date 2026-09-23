@@ -38,7 +38,6 @@ app.get('/api/health', (req, res) => {
     status: 'ok',
     uptime: process.uptime(),
     messageCount: db.getMessageCount(),
-    node: 'laptop-c',
     service: 'vaaksetu-backend',
     timestamp: new Date().toISOString(),
   });
@@ -57,6 +56,29 @@ app.post('/api/messages', (req, res) => {
   db.insertMessage(msg);
   io.emit('message:new', msg);
   res.status(201).json(msg);
+});
+
+// Socket relays for typing indicators + delivery/read receipts.
+io.on('connection', (socket) => {
+  socket.on('typing', (payload) => {
+    if (payload && typeof payload.who === 'string') {
+      io.emit('typing', { who: String(payload.who).slice(0, 40), typing: !!payload.typing });
+    }
+  });
+
+  socket.on('message:delivered', (payload) => {
+    if (payload && typeof payload.id === 'string') {
+      db.markDelivered(payload.id);
+      io.emit('message:status', { id: payload.id, status: 'delivered' });
+    }
+  });
+
+  socket.on('message:read', (payload) => {
+    if (payload && typeof payload.id === 'string') {
+      db.markDelivered(payload.id);
+      io.emit('message:status', { id: payload.id, status: 'read' });
+    }
+  });
 });
 
 // Delete a user's messages.

@@ -1,278 +1,217 @@
+/**
+ * SignAvatar — parametric SVG hand that plays pose sequences for text.
+ *
+ * - Renders any HandPoseDef from lib/signPoses.ts (finger curl + rotation
+ *   + location cues), so 92 poses come from one parametric component.
+ * - Unknown words fall back to fingerspelling (letter by letter).
+ * - Timeline: enter (scale 0.6→1 + fade 200ms) → hold 600ms → exit 200ms.
+ * - Progress dots, speed control, auto-repeat, and full-text caption below.
+ */
+
 import { useEffect, useMemo, useRef, useState } from "react"
 import type { CSSProperties } from "react"
 import { motion, AnimatePresence } from "motion/react"
+import { Repeat } from "lucide-react"
+import { poseForToken } from "../lib/signPoses"
+import type { HandPoseDef } from "../lib/signPoses"
 import { COLORS, FONT } from "../theme"
 
-/* ───────────────────── Pose SVGs (200×200, flat) ───────────────────── */
+/* ── Sequence building ──────────────────────────────────────────── */
+
+export interface PoseStep {
+  pose: HandPoseDef
+  /** The word/letter this step represents. */
+  token: string
+  fingerspelled: boolean
+}
+
+/** Parse text into pose steps; unknown words → fingerspelled letters. */
+export function stepsForText(text: string): PoseStep[] {
+  const words = text.toLowerCase().split(/\s+/).filter(Boolean)
+  const steps: PoseStep[] = []
+  for (const word of words) {
+    const clean = word.replace(/[^a-z0-9]/g, "")
+    if (!clean) continue
+    const pose = poseForToken(clean)
+    if (pose) {
+      steps.push({ pose, token: clean, fingerspelled: false })
+    } else if (clean.length <= 8) {
+      // Fingerspell up to 8 letters per unknown word.
+      for (const ch of clean) {
+        const letter = poseForToken(ch)
+        if (letter) steps.push({ pose: letter, token: ch.toUpperCase(), fingerspelled: true })
+      }
+    }
+  }
+  return steps.slice(0, 24)
+}
+
+/* ── Parametric SVG hand ────────────────────────────────────────── */
 
 const OUTLINE = "#0A1929"
 const FILL = "#00E0FF"
-const PALM = { fill: FILL, stroke: OUTLINE, strokeWidth: 6 }
+const PALM = { fill: FILL, stroke: OUTLINE, strokeWidth: 5 } as const
 
-/** Open hand — 5 fingers up. */
-function PalmSvg() {
-  return (
-    <svg viewBox="0 0 200 200" width="200" height="200" aria-hidden="true">
-      <rect x="70" y="92" width="60" height="76" rx="26" {...PALM} />
-      <rect x="62" y="30" width="17" height="74" rx="8.5" {...PALM} />
-      <rect x="84" y="18" width="17" height="86" rx="8.5" {...PALM} />
-      <rect x="106" y="24" width="17" height="80" rx="8.5" {...PALM} />
-      <rect x="128" y="40" width="16" height="64" rx="8" {...PALM} />
-      <rect x="30" y="100" width="46" height="17" rx="8.5" {...PALM} transform="rotate(40 53 108)" />
-    </svg>
-  )
+interface FingerParams {
+  baseX: number
+  baseY: number
+  length: number
+  width: number
+  /** 0 = straight up, 1 = fully curled into the palm. */
+  curl: number
 }
 
-/** Closed fist. */
-function FistSvg() {
+/** One finger: proximal phalanx rotates by curl, distal rotates further. */
+function Finger({ baseX, baseY, length, width, curl }: FingerParams) {
+  const proximalLen = length * 0.55
+  const distalLen = length * 0.45
+  const angle = curl * 85 // degrees of curl at the MCP joint
+  const distalAngle = curl * 80 // extra curl at the PIP joint
   return (
-    <svg viewBox="0 0 200 200" width="200" height="200" aria-hidden="true">
-      <rect x="52" y="64" width="96" height="104" rx="34" {...PALM} />
-      <rect x="60" y="72" width="80" height="20" rx="10" fill={OUTLINE} opacity={0.28} />
-      <rect x="60" y="98" width="80" height="18" rx="9" fill={OUTLINE} opacity={0.28} />
-      <rect x="60" y="122" width="80" height="18" rx="9" fill={OUTLINE} opacity={0.28} />
-    </svg>
-  )
-}
-
-/** Thumb up. */
-function ThumbUpSvg() {
-  return (
-    <svg viewBox="0 0 200 200" width="200" height="200" aria-hidden="true">
-      <rect x="58" y="96" width="84" height="72" rx="26" {...PALM} />
-      <rect x="76" y="18" width="22" height="86" rx="11" {...PALM} />
-      <rect x="66" y="110" width="68" height="18" rx="9" fill={OUTLINE} opacity={0.28} />
-    </svg>
-  )
-}
-
-/** Thumb down. */
-function ThumbDownSvg() {
-  return (
-    <svg viewBox="0 0 200 200" width="200" height="200" aria-hidden="true">
-      <rect x="58" y="32" width="84" height="72" rx="26" {...PALM} />
-      <rect x="76" y="96" width="22" height="86" rx="11" {...PALM} />
-      <rect x="66" y="48" width="68" height="18" rx="9" fill={OUTLINE} opacity={0.28} />
-    </svg>
-  )
-}
-
-/** Index + middle up. */
-function PeaceSvg() {
-  return (
-    <svg viewBox="0 0 200 200" width="200" height="200" aria-hidden="true">
-      <rect x="68" y="92" width="64" height="76" rx="26" {...PALM} />
-      <rect x="70" y="22" width="17" height="82" rx="8.5" {...PALM} transform="rotate(-10 78 63)" />
-      <rect x="100" y="18" width="17" height="86" rx="8.5" {...PALM} transform="rotate(9 108 61)" />
-      <rect x="72" y="104" width="56" height="18" rx="9" fill={OUTLINE} opacity={0.28} />
-    </svg>
-  )
-}
-
-/** Index only up. */
-function PointSvg() {
-  return (
-    <svg viewBox="0 0 200 200" width="200" height="200" aria-hidden="true">
-      <rect x="66" y="90" width="68" height="78" rx="26" {...PALM} />
-      <rect x="84" y="16" width="17" height="84" rx="8.5" {...PALM} />
-      <rect x="74" y="104" width="52" height="18" rx="9" fill={OUTLINE} opacity={0.28} />
-    </svg>
-  )
-}
-
-/** Open palm tilted — wave. */
-function WaveSvg() {
-  return (
-    <svg viewBox="0 0 200 200" width="200" height="200" aria-hidden="true">
-      <g transform="rotate(-18 100 100)">
-        <rect x="70" y="92" width="60" height="76" rx="26" {...PALM} />
-        <rect x="62" y="30" width="17" height="74" rx="8.5" {...PALM} />
-        <rect x="84" y="18" width="17" height="86" rx="8.5" {...PALM} />
-        <rect x="106" y="24" width="17" height="80" rx="8.5" {...PALM} />
-        <rect x="128" y="40" width="16" height="64" rx="8" {...PALM} />
-        <rect x="30" y="100" width="46" height="17" rx="8.5" {...PALM} transform="rotate(40 53 108)" />
+    <g transform={`translate(${baseX} ${baseY}) rotate(${-angle})`}>
+      <rect x={-width / 2} y={-proximalLen} width={width} height={proximalLen + 6} rx={width / 2} {...PALM} />
+      <g transform={`translate(0 ${-proximalLen + 4}) rotate(${-distalAngle})`}>
+        <rect x={-width / 2} y={-distalLen} width={width} height={distalLen} rx={width / 2} {...PALM} />
       </g>
-      <path
-        d="M156 66c8 8 8 20 0 28M170 52c14 14 14 36 0 50"
-        fill="none"
-        stroke={OUTLINE}
-        strokeWidth="8"
-        strokeLinecap="round"
-        opacity={0.55}
-      />
-    </svg>
+    </g>
   )
 }
 
-/** Index + middle + ring up. */
-function ThreeFingersSvg() {
+/** Curled thumb resting against the palm side. */
+function Thumb({ curl, palmLeft }: { curl: number; palmLeft: boolean }) {
+  const angle = curl * 70
   return (
-    <svg viewBox="0 0 200 200" width="200" height="200" aria-hidden="true">
-      <rect x="66" y="92" width="64" height="76" rx="26" {...PALM} />
-      <rect x="68" y="24" width="17" height="80" rx="8.5" {...PALM} />
-      <rect x="90" y="16" width="17" height="88" rx="8.5" {...PALM} />
-      <rect x="112" y="26" width="17" height="78" rx="8.5" {...PALM} />
-      <rect x="74" y="106" width="52" height="18" rx="9" fill={OUTLINE} opacity={0.28} />
-    </svg>
+    <g transform={`translate(${palmLeft ? 150 : 50} 118) rotate(${(palmLeft ? 1 : -1) * (35 - angle)})`}>
+      <rect x={-8} y={-46} width={16} height={48} rx={8} {...PALM} />
+    </g>
   )
 }
 
-/** Index + middle + ring + pinky up (no thumb). */
-function FourFingersSvg() {
+interface HandSvgProps {
+  pose: HandPoseDef
+  size: number
+}
+
+/** Renders the parametric hand for a pose definition. */
+export function HandSvg({ pose, size }: HandSvgProps) {
+  const [t, i, m, r, p] = pose.curl
+  const fingers: { x: number; len: number; w: number; curl: number }[] = [
+    { x: 66, len: 62, w: 15, curl: i },
+    { x: 90, len: 72, w: 15, curl: m },
+    { x: 114, len: 66, w: 15, curl: r },
+    { x: 137, len: 52, w: 14, curl: p },
+  ]
+  const offsetX = (pose.offsetX ?? 0) * 26
+  const offsetY = (pose.offsetY ?? 0) * 30
+
   return (
-    <svg viewBox="0 0 200 200" width="200" height="200" aria-hidden="true">
-      <rect x="60" y="92" width="72" height="76" rx="26" {...PALM} />
-      <rect x="60" y="28" width="16" height="76" rx="8" {...PALM} />
-      <rect x="81" y="18" width="16" height="86" rx="8" {...PALM} />
-      <rect x="102" y="18" width="16" height="86" rx="8" {...PALM} />
-      <rect x="123" y="30" width="16" height="74" rx="8" {...PALM} />
-      <rect x="68" y="106" width="56" height="18" rx="9" fill={OUTLINE} opacity={0.28} />
+    <svg viewBox="0 0 200 200" width={size} height={size} aria-hidden="true">
+      <g transform={`translate(${offsetX} ${offsetY}) rotate(${pose.rotate ?? 0} 100 130)`}>
+        {/* palm */}
+        <rect x={52} y={104} width={96} height={68} rx={24} {...PALM} />
+        {/* fingers (index→pinky) */}
+        {fingers.map((f, idx) => (
+          <Finger key={idx} baseX={f.x} baseY={110} length={f.len} width={f.w} curl={f.curl} />
+        ))}
+        {/* thumb */}
+        <Thumb curl={t} palmLeft={false} />
+        {/* motion arcs (wave / yes / again…) */}
+        {pose.motion && (
+          <path
+            d="M158 70c9 9 9 22 0 31M172 56c15 15 15 39 0 54"
+            fill="none"
+            stroke={OUTLINE}
+            strokeWidth={7}
+            strokeLinecap="round"
+            opacity={0.5}
+          />
+        )}
+        {/* face location markers */}
+        {pose.face === "chin" && <circle cx={100} cy={22} r={12} fill={OUTLINE} opacity={0.25} />}
+        {pose.face === "lips" && <ellipse cx={100} cy={20} rx={13} ry={8} fill={OUTLINE} opacity={0.25} />}
+        {pose.face === "ear" && <path d="M168 30a10 10 0 1 0 1 16" fill="none" stroke={OUTLINE} strokeWidth={6} opacity={0.3} />}
+        {pose.face === "eye" && <circle cx={155} cy={26} r={7} fill={OUTLINE} opacity={0.25} />}
+      </g>
+      {/* second hand for two-handed signs */}
+      {pose.secondHand && (
+        <g transform={`translate(0 ${pose.secondHand === "mirror" ? 0 : 8})`} opacity={0.85}>
+          <rect x={44} y={150} width={112} height={34} rx={17} {...PALM} />
+        </g>
+      )}
     </svg>
   )
 }
 
-/** Pinky only up. */
-function PinkySvg() {
-  return (
-    <svg viewBox="0 0 200 200" width="200" height="200" aria-hidden="true">
-      <rect x="62" y="90" width="70" height="78" rx="26" {...PALM} />
-      <rect x="118" y="26" width="16" height="78" rx="8" {...PALM} />
-      <rect x="72" y="104" width="54" height="18" rx="9" fill={OUTLINE} opacity={0.28} />
-    </svg>
-  )
-}
+/* ── Player component ───────────────────────────────────────────── */
 
-export type SignPose =
-  | "Palm"
-  | "Fist"
-  | "ThumbUp"
-  | "ThumbDown"
-  | "Peace"
-  | "Point"
-  | "Wave"
-  | "ThreeFingers"
-  | "FourFingers"
-  | "Pinky"
-
-const POSE_SVG: Record<SignPose, () => JSX.Element> = {
-  Palm: PalmSvg,
-  Fist: FistSvg,
-  ThumbUp: ThumbUpSvg,
-  ThumbDown: ThumbDownSvg,
-  Peace: PeaceSvg,
-  Point: PointSvg,
-  Wave: WaveSvg,
-  ThreeFingers: ThreeFingersSvg,
-  FourFingers: FourFingersSvg,
-  Pinky: PinkySvg,
-}
-
-/* ───────────────────── Keyword → pose mapping ───────────────────── */
-
-/** Longer keys first so "thank you" wins over "you". */
-const KEYWORD_TO_POSE: Array<[string, SignPose]> = [
-  ["thank you", "Wave"],
-  ["water", "ThreeFingers"],
-  ["food", "FourFingers"],
-  ["hungry", "FourFingers"],
-  ["pain", "Fist"],
-  ["help", "Pinky"],
-  ["yes", "Fist"],
-  ["no", "ThumbDown"],
-  ["more", "Peace"],
-  ["please", "Palm"],
-  ["love", "Palm"],
-  ["mother", "Wave"],
-  ["father", "Point"],
-  ["hello", "Wave"],
-  ["stop", "Palm"],
-  ["toilet", "Point"],
-  ["happy", "Palm"],
-  ["sad", "Fist"],
-  ["tired", "Fist"],
-  ["scared", "Fist"],
-]
-
-/** Parse free text into an ordered, de-duplicated pose sequence (max 4). */
-export function posesForText(text: string): SignPose[] {
-  const lower = text.toLowerCase()
-  const poses: SignPose[] = []
-  const seen = new Set<SignPose>()
-  for (const [keyword, pose] of KEYWORD_TO_POSE) {
-    if (lower.includes(keyword) && !seen.has(pose)) {
-      seen.add(pose)
-      poses.push(pose)
-      if (poses.length >= 4) break
-    }
-  }
-  return poses
-}
-
-/* ───────────────────── Component ───────────────────── */
-
-const ENTER_MS = 300
-const HOLD_MS = 800
+const ENTER_MS = 200
+const HOLD_MS = 600
 const EXIT_MS = 200
-const MAX_LOOPS = 3
 
 interface Props {
   text: string
   onComplete?: () => void
   /** SVG render size (default 200). */
   size?: number
+  /** Playback speed multiplier (0.5 | 1 | 1.5). */
+  speed?: number
+  /** Loop forever until stopped. */
+  repeat?: boolean
+  /** Show playback controls (speed slider + repeat toggle). */
+  controls?: boolean
 }
 
-export function SignAvatar({ text, onComplete, size = 200 }: Props) {
-  const poses = useMemo(() => posesForText(text), [text])
+export function SignAvatar({ text, onComplete, size = 200, speed = 1, repeat = false, controls = false }: Props) {
+  const steps = useMemo(() => stepsForText(text), [text])
   const [index, setIndex] = useState(0)
-  const [loop, setLoop] = useState(0)
+  const [loopCount, setLoopCount] = useState(0)
+  const [isRepeating, setIsRepeating] = useState(repeat)
+  const [speedMultiplier, setSpeedMultiplier] = useState(speed)
   const completedRef = useRef(false)
 
   // Restart when the text changes.
   useEffect(() => {
     setIndex(0)
-    setLoop(0)
+    setLoopCount(0)
     completedRef.current = false
   }, [text])
 
-  const hasPoses = poses.length > 0
+  const hasSteps = steps.length > 0
+  const stepDuration = (ENTER_MS + HOLD_MS + EXIT_MS) / speedMultiplier
 
   useEffect(() => {
-    if (!hasPoses) {
+    if (!hasSteps) {
       if (!completedRef.current) {
         completedRef.current = true
         onComplete?.()
       }
       return
     }
-    const isLast = index === poses.length - 1
-    const finalLoop = loop >= MAX_LOOPS - 1
-    const advance = window.setTimeout(
-      () => {
-        if (!isLast) {
-          setIndex((i) => i + 1)
-        } else if (!finalLoop) {
-          setLoop((l) => l + 1)
-          setIndex(0)
-        } else if (!completedRef.current) {
-          completedRef.current = true
-          onComplete?.()
-        }
-      },
-      ENTER_MS + HOLD_MS + EXIT_MS,
-    )
-    return () => window.clearTimeout(advance)
-  }, [index, loop, poses.length, hasPoses, onComplete])
+    if (index >= steps.length) {
+      // Sequence finished.
+      if (isRepeating) {
+        setLoopCount((l) => l + 1)
+        setIndex(0)
+      } else if (!completedRef.current) {
+        completedRef.current = true
+        onComplete?.()
+      }
+      return
+    }
+    const timer = window.setTimeout(() => setIndex((i) => i + 1), stepDuration)
+    return () => window.clearTimeout(timer)
+  }, [index, hasSteps, stepDuration, isRepeating, steps.length, onComplete])
 
-  const current = hasPoses ? poses[index] : null
-  const Svg = current ? POSE_SVG[current] : null
-  const total = hasPoses ? poses.length : 1
+  const current = index < steps.length ? steps[index] : null
+  const total = Math.max(steps.length, 1)
 
   const dotsStyle: CSSProperties = {
     display: "flex",
     gap: 7,
     justifyContent: "center",
     marginTop: 12,
+    flexWrap: "wrap",
+    maxWidth: size + 40,
   }
 
   return (
@@ -289,37 +228,28 @@ export function SignAvatar({ text, onComplete, size = 200 }: Props) {
     >
       <div style={{ width: size, height: size, position: "relative" }}>
         <AnimatePresence mode="wait">
-          {Svg ? (
+          {current ? (
             <motion.div
-              key={`${loop}-${index}`}
-              initial={{ opacity: 0, scale: 0.5 }}
-              animate={{ opacity: 1, scale: 1, transition: { duration: ENTER_MS / 1000, ease: "easeOut" } }}
-              exit={{
-                opacity: 0,
-                scale: 1.15,
-                transition: { duration: EXIT_MS / 1000, ease: "easeIn" },
-              }}
+              key={`${loopCount}-${index}-${current.pose.id}`}
+              initial={{ opacity: 0, scale: 0.6 }}
+              animate={{ opacity: 1, scale: 1, transition: { duration: ENTER_MS / 1000 / speedMultiplier, ease: "easeOut" } }}
+              exit={{ opacity: 0, scale: 1.08, transition: { duration: EXIT_MS / 1000 / speedMultiplier, ease: "easeIn" } }}
               style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
             >
-              <div style={{ transform: "scale(var(--avatar-scale, 1))", width: "100%", height: "100%" }}>
-                <div style={{ width: "100%", height: "100%", transformOrigin: "center" }}>
-                  <Svg />
-                </div>
-              </div>
+              <HandSvg pose={current.pose} size={size} />
             </motion.div>
           ) : (
             <motion.span
               key="none"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
               style={{
                 position: "absolute",
                 inset: 0,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                fontSize: 64,
+                fontSize: 56,
               }}
               aria-hidden="true"
             >
@@ -329,16 +259,17 @@ export function SignAvatar({ text, onComplete, size = 200 }: Props) {
         </AnimatePresence>
       </div>
 
-      <div style={{ height: 40, display: "flex", alignItems: "center" }}>
+      {/* Sign label + fingerspelling indicator */}
+      <div style={{ height: 44, display: "flex", alignItems: "center", gap: 8 }}>
         <AnimatePresence mode="wait">
           {current && (
             <motion.span
-              key={`${loop}-${index}-label`}
+              key={`${loopCount}-${index}-label`}
               initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0, transition: { duration: 0.2 } }}
               exit={{ opacity: 0, y: -6, transition: { duration: 0.12 } }}
               style={{
-                fontSize: 32,
+                fontSize: 30,
                 fontWeight: 900,
                 letterSpacing: 2,
                 textTransform: "uppercase",
@@ -346,14 +277,15 @@ export function SignAvatar({ text, onComplete, size = 200 }: Props) {
                 textShadow: "0 0 22px rgba(0, 224, 255, 0.4)",
               }}
             >
-              {current}
+              {current.fingerspelled ? `Letter ${current.token}` : current.pose.label}
             </motion.span>
           )}
         </AnimatePresence>
       </div>
 
+      {/* Progress dots */}
       <div style={dotsStyle} aria-hidden="true">
-        {Array.from({ length: Math.max(3, Math.min(5, total)) }).map((_, i) => (
+        {Array.from({ length: Math.min(total, 12) }).map((_, i) => (
           <span
             key={i}
             style={{
@@ -361,17 +293,56 @@ export function SignAvatar({ text, onComplete, size = 200 }: Props) {
               height: 9,
               borderRadius: "50%",
               background:
-                hasPoses && i === index
+                hasSteps && i === Math.min(index, 11)
                   ? COLORS.accentBright
-                  : hasPoses && i < index
+                  : hasSteps && i < index
                     ? "rgba(0, 224, 255, 0.45)"
                     : "rgba(148, 163, 184, 0.3)",
-              boxShadow: hasPoses && i === index ? "0 0 10px rgba(0, 224, 255, 0.7)" : "none",
-              transition: "background 0.2s ease, box-shadow 0.2s ease",
+              boxShadow: hasSteps && i === index ? "0 0 10px rgba(0, 224, 255, 0.7)" : "none",
+              transition: "background 0.2s ease",
             }}
           />
         ))}
       </div>
+
+      {/* Controls */}
+      {controls && (
+        <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 8, flexWrap: "wrap", justifyContent: "center" }}>
+          <button
+            type="button"
+            onClick={() => setIsRepeating((r) => !r)}
+            aria-pressed={isRepeating}
+            aria-label="Auto-repeat the sign sequence"
+            className="btn-ghost"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              minHeight: 44,
+              padding: "0 14px",
+              fontSize: 14,
+              color: isRepeating ? COLORS.accentBright : COLORS.textDim,
+              borderColor: isRepeating ? "rgba(0,224,255,0.5)" : COLORS.borderGlass,
+            }}
+          >
+            <Repeat size={15} aria-hidden="true" /> Auto-repeat {isRepeating ? "ON" : "OFF"}
+          </button>
+          <label htmlFor="sign-speed" style={{ fontSize: 14, fontWeight: 700, color: COLORS.textDim }}>
+            Speed
+          </label>
+          <input
+            id="sign-speed"
+            type="range"
+            min={0.5}
+            max={1.5}
+            step={0.5}
+            value={speedMultiplier}
+            onChange={(e) => setSpeedMultiplier(Number(e.target.value))}
+            style={{ width: 110, accentColor: COLORS.accent, minHeight: 44 }}
+          />
+          <span style={{ fontSize: 14, fontWeight: 800, color: COLORS.textDim }}>{speedMultiplier}×</span>
+        </div>
+      )}
     </div>
   )
 }

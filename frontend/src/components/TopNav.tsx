@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import type { CSSProperties, ReactNode } from "react"
 import { Link, useLocation } from "react-router-dom"
 import { motion } from "motion/react"
-import { Home, MessagesSquare, Hand, HeartHandshake, BarChart3, Settings, Command as CommandIcon } from "lucide-react"
+import { Home, MessagesSquare, Hand, HeartHandshake, BarChart3, Settings, Command as CommandIcon, Mic, History } from "lucide-react"
 import Pulse from "./ui/Pulse"
 import { tokens } from "../styles/tokens"
 
@@ -12,6 +12,8 @@ const LINKS = [
   { to: "/user", label: "User", icon: Home },
   { to: "/conversation", label: "Conversation", icon: MessagesSquare },
   { to: "/sign", label: "Sign", icon: Hand },
+  { to: "/speech", label: "Speech", icon: Mic },
+  { to: "/history", label: "History", icon: History },
   { to: "/guardian", label: "Guardian", icon: HeartHandshake },
   { to: "/admin", label: "Admin", icon: BarChart3 },
 ]
