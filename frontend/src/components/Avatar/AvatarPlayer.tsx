@@ -14,8 +14,8 @@ import { SigningAvatar } from "./SigningAvatar"
 import type { AvatarMode } from "./SigningAvatar"
 import { sentenceToSignSequence } from "../../lib/avatar/sequencer"
 import type { SignSequence, SignLanguage } from "../../lib/avatar/sequencer"
-import type { SignPose } from "../../lib/avatar/poses"
-import { NEUTRAL_POSE } from "../../lib/avatar/poses"
+import type { SignPose, Expression } from "../../lib/avatar/poses"
+import { NEUTRAL_POSE, listeningPose } from "../../lib/avatar/poses"
 import { COLORS, FONT, RADIUS } from "../../theme"
 
 export interface AvatarPlayerProps {
@@ -30,6 +30,10 @@ export interface AvatarPlayerProps {
   onComplete?: () => void
   /** Hide the control row (mini contexts). */
   compact?: boolean
+  /** Override the expression of every pose (sentiment-driven moods). */
+  expression?: Expression | null
+  /** When idle: direction the avatar faces (eye contact with speaker). */
+  idleFacing?: "left" | "right"
 }
 
 interface RuntimeStep {
@@ -46,6 +50,8 @@ export function AvatarPlayer({
   size = 320,
   onComplete,
   compact = false,
+  expression = null,
+  idleFacing = "left",
 }: AvatarPlayerProps) {
   const seq: SignSequence = useMemo(() => sentenceToSignSequence(text, lang), [text, lang])
   const steps: RuntimeStep[] = useMemo(
@@ -108,14 +114,19 @@ export function AvatarPlayer({
   const current = index < steps.length ? steps[index] : steps.length > 0 ? steps[steps.length - 1] : null
   const progress = steps.length > 0 ? Math.min(index / steps.length, 1) : 0
   const fingerspelledWord = current?.fingerspelled ? current.word : undefined
-  const mode: AvatarMode = playing ? "signing" : "idle"
+  const mode: AvatarMode = playing ? "signing" : "listening"
+
+  // Expression override (sentiment) + idle eye-contact pose.
+  const renderPose: SignPose = current
+    ? { ...current.pose, expression: expression ?? current.pose.expression }
+    : listeningPose(idleFacing)
 
   const captionWord = current?.token && current.token.length > 0 ? current.token : null
 
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, fontFamily: FONT }}>
       <div style={{ position: "relative", lineHeight: 0 }}>
-        <SigningAvatar pose={current?.pose ?? NEUTRAL_POSE} mode={mode} size={size} ariaLabel={text ? `Avatar signing: ${text}` : "Signing avatar idle"} />
+        <SigningAvatar pose={renderPose} mode={mode} size={size} ariaLabel={text ? `Avatar signing: ${text}` : "Signing avatar idle"} />
       </div>
 
       {/* Current word caption */}

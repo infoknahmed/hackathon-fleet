@@ -143,6 +143,55 @@ const SOCKET_EVENTS = {
   HISTORY: 'messages:history'
 } as const
 
+// ── Phase 5C: avatar-talk group rooms ─────────────────────────────
+
+export interface AvatarRoomTurn {
+  room: string
+  side: 'hearing' | 'deaf'
+  text: string
+  confidence: number
+  lang: string
+  timestamp: number
+}
+
+/** Join a group session room (idempotent). */
+export function joinAvatarRoom(room: string): void {
+  ensureSocket()
+  socket?.emit('avatar-room:join', { room })
+}
+
+/** Leave a group session room. */
+export function leaveAvatarRoom(room: string): void {
+  socket?.emit('avatar-room:leave', { room })
+}
+
+/** Broadcast a conversation turn to every participant in the room. */
+export function sendAvatarRoomTurn(turn: Omit<AvatarRoomTurn, 'timestamp'> & { timestamp?: number }): void {
+  ensureSocket()
+  socket?.emit('avatar-room:message', { ...turn, timestamp: turn.timestamp ?? Date.now() })
+}
+
+/** Subscribe to other participants' turns in the joined room. */
+export function onAvatarRoomTurn(cb: (turn: AvatarRoomTurn) => void): () => void {
+  const s = ensureSocket()
+  const handler = (payload: unknown) => {
+    const t = payload as Partial<AvatarRoomTurn> | null
+    if (!t || typeof t.room !== 'string' || typeof t.text !== 'string') return
+    cb({
+      room: t.room,
+      side: t.side === 'deaf' ? 'deaf' : 'hearing',
+      text: t.text,
+      confidence: typeof t.confidence === 'number' ? t.confidence : 0,
+      lang: typeof t.lang === 'string' ? t.lang : 'en',
+      timestamp: typeof t.timestamp === 'number' ? t.timestamp : Date.now(),
+    })
+  }
+  s.on('avatar-room:message', handler)
+  return () => {
+    s.off('avatar-room:message', handler)
+  }
+}
+
 /**
  * The backend (backend/server.js) rebuilds every incoming payload through
  * makeMessage(), which only keeps role/content/confidence/lang/emergency.

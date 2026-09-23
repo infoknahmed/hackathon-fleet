@@ -271,7 +271,7 @@ function Face({ expression, look, blink }: { expression: Expression; look: numbe
           cx={150}
           cy={75}
           rx={6}
-          animate={{ ry: [2.5, 5.5, 3.5, 6, 2.5] }}
+          animate={{ rx: [5, 7.5, 4.2, 6.2, 5], ry: [2.5, 5.5, 3.5, 6, 2.5] }}
           transition={{ repeat: Infinity, duration: 0.85, ease: "easeInOut" }}
           fill="#7C2D3E"
           stroke={SKIN_LINE}
@@ -289,18 +289,45 @@ function Face({ expression, look, blink }: { expression: Expression; look: numbe
 /* ── Main avatar ───────────────────────────────────────────────── */
 
 export type AvatarMode = "idle" | "signing" | "speaking" | "listening"
+/** Phase 5B state-machine alias for `mode`. */
+export type AvatarState = AvatarMode
+
+/** Facial mood (Phase 5B): positive → smile, negative → concern, neutral → relaxed. */
+export type AvatarEmotion = "neutral" | "positive" | "negative"
+
+/** Sentiment keywords parsed from conversation text (Phase 5B). */
+const POSITIVE_WORDS = new Set(["love", "loved", "thanks", "thank", "good", "happy", "great", "nice", "welcome", "please"])
+const NEGATIVE_WORDS = new Set(["pain", "help", "hurt", "sad", "emergency", "bad", "hurts", "ache", "scared", "no"])
+
+/** Map a sentence to an avatar emotion via keyword sentiment. */
+export function parseEmotion(text: string): AvatarEmotion {
+  const words = text.toLowerCase().split(/[^a-z]+/).filter(Boolean)
+  let score = 0
+  for (const w of words) {
+    if (POSITIVE_WORDS.has(w)) score++
+    if (NEGATIVE_WORDS.has(w)) score--
+  }
+  if (score > 0) return "positive"
+  if (score < 0) return "negative"
+  return "neutral"
+}
 
 export interface SigningAvatarProps {
   /** Current pose snapshot (interpolated with CSS springs). */
   pose?: SignPose
   mode?: AvatarMode
+  /** Phase 5B alias for `mode` — the avatar state machine. */
+  state?: AvatarState
+  /** Phase 5B facial emotion override (parsed from text by callers). */
+  emotion?: AvatarEmotion
   /** Rendered width/height in px. */
   size?: number
   ariaLabel?: string
 }
 
-export function SigningAvatar({ pose, mode = "idle", size = 320, ariaLabel }: SigningAvatarProps) {
+export function SigningAvatar({ pose, mode = "idle", state, emotion, size = 320, ariaLabel }: SigningAvatarProps) {
   const p = pose ?? NEUTRAL_POSE
+  const eff: AvatarMode = state ?? mode
   const [blink, setBlink] = useState(false)
 
   // Blink every ~3s (with jitter) — required idle-life behavior.
@@ -321,9 +348,25 @@ export function SigningAvatar({ pose, mode = "idle", size = 320, ariaLabel }: Si
     }
   }, [])
 
-  const expr: Expression = mode === "speaking" ? "speaking" : p.expression
+  // Emotion → face: positive → smile, negative → concern. During signing the
+  // pose's own expression wins unless the pose is neutral or emotion is explicit.
+  const emotionExpr: Expression | null =
+    emotion === "positive" ? "happy" : emotion === "negative" ? "sad" : null
+  let expr: Expression = eff === "speaking" ? "speaking" : p.expression
+  if (emotionExpr && (eff !== "signing" || p.expression === "neutral")) {
+    expr = emotionExpr
+  } else if (eff === "listening" && expr === "neutral") {
+    expr = "question" // raised brows while attending to the speaker
+  }
   const look = Math.max(-3, Math.min(3, p.head.rotation / 6))
   const headTransform = `translate(${p.head.rotation * 0.55}px 0) rotate(${p.head.tilt}deg)`
+  // Listening → gentle nod; speaking → faster bob to speech rhythm.
+  const headAnim =
+    eff === "listening"
+      ? "vaaksetu-nod 2.8s ease-in-out infinite"
+      : eff === "speaking"
+        ? "vaaksetu-bob 1.9s ease-in-out infinite"
+        : "vaaksetu-bob 3.4s ease-in-out infinite"
 
   return (
     <svg
@@ -337,6 +380,7 @@ export function SigningAvatar({ pose, mode = "idle", size = 320, ariaLabel }: Si
       <style>{`
         @keyframes vaaksetu-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(2.4px); } }
         @keyframes vaaksetu-breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.012); } }
+        @keyframes vaaksetu-nod { 0%, 100% { transform: rotate(0deg) translateY(0); } 50% { transform: rotate(2.2deg) translateY(2.2px); } }
       `}</style>
 
       {/* floor shadow */}
@@ -360,7 +404,7 @@ export function SigningAvatar({ pose, mode = "idle", size = 320, ariaLabel }: Si
       <Arm sh={SH_R} hand={p.rightHand} mirrorHand={false} />
 
       {/* head (bob + turn + tilt) */}
-      <g style={{ transformBox: "view-box", transformOrigin: "150px 92px", animation: "vaaksetu-bob 3.4s ease-in-out infinite" }}>
+      <g style={{ transformBox: "view-box", transformOrigin: "150px 92px", animation: headAnim }}>
         <g
           style={{
             transform: headTransform,

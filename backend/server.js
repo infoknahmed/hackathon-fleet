@@ -60,6 +60,35 @@ app.post('/api/messages', (req, res) => {
 
 // Socket relays for typing indicators + delivery/read receipts.
 io.on('connection', (socket) => {
+  // ── Phase 5C: avatar-talk group rooms ─────────────────────────
+  socket.on('avatar-room:join', (payload) => {
+    const room = payload && typeof payload.room === 'string' ? payload.room.slice(0, 80) : '';
+    if (!room) return;
+    socket.join(room);
+    io.to(room).emit('avatar-room:members', { room, count: io.sockets.adapter.rooms.get(room)?.size ?? 1 });
+  });
+
+  socket.on('avatar-room:leave', (payload) => {
+    const room = payload && typeof payload.room === 'string' ? payload.room.slice(0, 80) : '';
+    if (!room) return;
+    socket.leave(room);
+  });
+
+  // Relay conversation turns to everyone in the session room.
+  socket.on('avatar-room:message', (payload) => {
+    const room = payload && typeof payload.room === 'string' ? payload.room.slice(0, 80) : '';
+    if (!room) return;
+    // The sender already renders its own turn optimistically.
+    socket.to(room).emit('avatar-room:message', {
+      room,
+      side: payload.side === 'deaf' ? 'deaf' : 'hearing',
+      text: String(payload.text ?? '').slice(0, 500),
+      confidence: Number(payload.confidence) || 0,
+      lang: typeof payload.lang === 'string' ? payload.lang.slice(0, 8) : 'en',
+      timestamp: payload.timestamp || Date.now(),
+    });
+  });
+
   socket.on('typing', (payload) => {
     if (payload && typeof payload.who === 'string') {
       io.emit('typing', { who: String(payload.who).slice(0, 40), typing: !!payload.typing });
