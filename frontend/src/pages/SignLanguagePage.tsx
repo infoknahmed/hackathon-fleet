@@ -27,6 +27,7 @@ import {
   flattenLandmarks,
 } from "../lib/gestureClassifier"
 import { TrainingModePanel } from "../components/TrainingModePanel"
+import { AvatarPlayer } from "../components/Avatar/AvatarPlayer"
 import { COLORS, FONT, RADIUS, SHADOW, TAP_MIN } from "../theme"
 
 /* ─────────────────────────── Gesture model ─────────────────────────── */
@@ -173,6 +174,14 @@ export default function SignLanguagePage() {
 
   // Sentence builder.
   const [sentence, setSentence] = useState<string[]>([])
+
+  // Wide viewport flag (avatar echo panel is desktop-only).
+  const [wide, setWide] = useState(() => typeof window !== "undefined" && window.innerWidth >= 1024)
+  useEffect(() => {
+    const onResize = () => setWide(window.innerWidth >= 1024)
+    window.addEventListener("resize", onResize)
+    return () => window.removeEventListener("resize", onResize)
+  }, [])
 
   const [loadState, setLoadState] = useState<LoadState>("loading")
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
@@ -717,6 +726,33 @@ export default function SignLanguagePage() {
           }}
         >
           {Math.round(fps)} FPS
+        </div>
+      )}
+
+      {/* Avatar echo — signs back the accepted gesture (desktop) */}
+      {wide && (accepted || sentence.length > 0) && (
+        <div
+          aria-label="Avatar signing your gesture back"
+          style={{
+            position: "absolute",
+            left: 16,
+            bottom: 210,
+            zIndex: 20,
+            width: 168,
+            padding: "8px 8px 6px",
+            borderRadius: RADIUS.lg,
+            background: "rgba(10, 25, 41, 0.78)",
+            backdropFilter: "blur(20px) saturate(160%)",
+            WebkitBackdropFilter: "blur(20px) saturate(160%)",
+            border: `1px solid ${COLORS.borderGlass}`,
+            boxShadow: SHADOW.md,
+            textAlign: "center",
+          }}
+        >
+          <AvatarPlayer text={accepted ?? sentence.join(" ")} size={136} compact />
+          <p style={{ margin: "2px 0 0", fontSize: 11, fontWeight: 800, letterSpacing: 1.2, textTransform: "uppercase", color: COLORS.textDim }}>
+            Avatar echo
+          </p>
         </div>
       )}
 

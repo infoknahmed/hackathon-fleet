@@ -2,8 +2,9 @@ import { useCallback, useMemo, useState } from "react"
 import type { CSSProperties } from "react"
 import { motion } from "motion/react"
 import { Hand, Download, Info } from "lucide-react"
-import { SignAvatar } from "../components/SignAvatar"
+import { AvatarPlayer } from "../components/Avatar/AvatarPlayer"
 import { POSE_LIBRARY_SIZE, hasWordSign } from "../lib/signPoses"
+import { POSE_LIBRARY_SIZE as FULL_POSE_COUNT } from "../lib/avatar/poses"
 import { COLORS, FONT, RADIUS, SHADOW, TAP_MIN } from "../theme"
 import TopNav from "../components/TopNav"
 
@@ -15,8 +16,6 @@ import TopNav from "../components/TopNav"
 export default function TextToSignPage() {
   const [input, setInput] = useState("hello please help me")
   const [played, setPlayed] = useState<string>("")
-  const [repeat] = useState(false)
-  const [speed] = useState(1)
   const [capturing, setCapturing] = useState(false)
 
   const words = useMemo(
@@ -114,7 +113,7 @@ export default function TextToSignPage() {
             <Hand size={26} aria-hidden="true" /> Text → Sign
           </h1>
           <p style={{ margin: "4px 0 0", fontSize: 15, color: COLORS.textDim }}>
-            {POSE_LIBRARY_SIZE} poses: word signs, numbers, and the full fingerspelling alphabet.
+            {FULL_POSE_COUNT}+ full-body poses ({POSE_LIBRARY_SIZE} hand poses): word signs, phrases, numbers, and the full fingerspelling alphabet.
           </p>
         </header>
 
@@ -150,7 +149,7 @@ export default function TextToSignPage() {
         <div style={{ ...cardStyle, display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }} data-sign-stage>
           {played ? (
             <>
-              <SignAvatar text={played} size={220} speed={speed} repeat={repeat} controls />
+              <AvatarPlayer text={played} size={300} onComplete={() => undefined} />
               <p style={{ margin: "8px 0 0", fontSize: 18, fontWeight: 700, textAlign: "center", color: COLORS.text }}>
                 “{played}”
               </p>

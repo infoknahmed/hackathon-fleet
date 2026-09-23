@@ -18,7 +18,7 @@ import { PictogramGrid } from "../components/PictogramGrid"
 import type { Pictogram } from "../components/PictogramGrid"
 import { MessageCard } from "../components/MessageCard"
 import type { ChatMessage } from "../components/MessageCard"
-import { SignAvatar } from "../components/SignAvatar"
+import { AvatarPlayer } from "../components/Avatar/AvatarPlayer"
 import { predictSentence, recordPhraseUsed, recordCorrection } from "../lib/predict"
 import {
   speak,
@@ -704,7 +704,7 @@ export default function ConversationPage() {
                     overflow: "hidden",
                   }}
                 >
-                  <SignAvatar text={signPopup.text} onComplete={closeSignPopup} size={96} />
+                  <AvatarPlayer text={signPopup.text} size={260} onComplete={closeSignPopup} />
                   <p style={{ margin: 0, fontSize: 14, fontWeight: 700, textAlign: "center" }}>“{signPopup.text}”</p>
                 </motion.div>
               )}
