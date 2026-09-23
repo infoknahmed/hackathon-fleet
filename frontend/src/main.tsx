@@ -24,6 +24,7 @@ const VoicesPage = lazy(() => import("./pages/VoicesPage"))
 const PhrasesPage = lazy(() => import("./pages/PhrasesPage"))
 const HistoryPage = lazy(() => import("./pages/HistoryPage"))
 const SignPracticePage = lazy(() => import("./pages/SignPracticePage"))
+const VoiceSetupPage = lazy(() => import("./pages/VoiceSetupPage"))
 
 /** Global offline indicator + pending-sync counter banner. */
 function ConnectivityBanner() {
@@ -124,6 +125,7 @@ function AnimatedRoutes() {
         <Route path="/speech" element={<PageShell><Suspense fallback={null}><SpeechPage /></Suspense></PageShell>} />
         <Route path="/text-to-sign" element={<PageShell><Suspense fallback={null}><TextToSignPage /></Suspense></PageShell>} />
         <Route path="/voices" element={<PageShell><Suspense fallback={null}><VoicesPage /></Suspense></PageShell>} />
+        <Route path="/voice-setup" element={<PageShell><Suspense fallback={null}><VoiceSetupPage /></Suspense></PageShell>} />
         <Route path="/phrases" element={<PageShell><Suspense fallback={null}><PhrasesPage /></Suspense></PageShell>} />
         <Route path="/history" element={<PageShell><Suspense fallback={null}><HistoryPage /></Suspense></PageShell>} />
         <Route path="/guardian" element={<PageShell><GuardianDashboard /></PageShell>} />

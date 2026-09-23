@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
+import { Link } from "react-router-dom"
 import { motion } from "motion/react"
-import { Volume2, PlayCircle } from "lucide-react"
+import { Volume2, PlayCircle, Mic, Settings2 } from "lucide-react"
 import {
   getVoices,
   waitForVoices,
@@ -12,6 +13,7 @@ import {
 } from "../lib/speech"
 import { COLORS, FONT, RADIUS, SHADOW, TAP_MIN } from "../theme"
 import TopNav from "../components/TopNav"
+import { isClonedVoiceEnabled, setClonedVoiceEnabled, hasVoiceProfile } from "../lib/voiceClone"
 
 /**
  * /voices — system voice inventory grouped by language with play buttons.
@@ -28,17 +30,27 @@ interface VoiceGroup {
 export default function VoicesPage() {
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>(() => getVoices())
   const [speakingUri, setSpeakingUri] = useState<string | null>(null)
+  const [cloneEnabled, setCloneEnabled] = useState(() => isClonedVoiceEnabled())
+  const [hasClone, setHasClone] = useState<boolean | null>(null)
 
   useEffect(() => {
     let cancelled = false
     void waitForVoices().then((v) => {
       if (!cancelled) setVoices(v)
     })
+    void hasVoiceProfile().then((exists) => {
+      if (!cancelled) setHasClone(exists)
+    })
     return () => {
       cancelled = true
       stopSpeaking()
     }
   }, [])
+
+  const toggleClone = (on: boolean) => {
+    setCloneEnabled(on)
+    setClonedVoiceEnabled(on)
+  }
 
   /** Group app languages first, then any other languages present. */
   const groups = useMemo<VoiceGroup[]>(() => {
@@ -133,6 +145,59 @@ export default function VoicesPage() {
             })}
           </div>
         </div>
+
+        {/* Cloned voice (Phase 3) */}
+        <section aria-label="Cloned voice settings" style={cardStyle}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <span
+                aria-hidden="true"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: 42,
+                  height: 42,
+                  borderRadius: RADIUS.md,
+                  background: "rgba(124, 58, 237, 0.14)",
+                  border: "1px solid rgba(124, 58, 237, 0.4)",
+                  color: "#C4B5FD",
+                }}
+              >
+                <Mic size={20} aria-hidden="true" />
+              </span>
+              <div>
+                <h2 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>Use my cloned voice</h2>
+                <p style={{ margin: 0, fontSize: 12.5, color: COLORS.textDim }}>
+                  {hasClone === null
+                    ? "Checking this device…"
+                    : hasClone
+                      ? "Voice profile found on this device"
+                      : "No voice profile yet — record one to speak in your own voice"}
+                </p>
+              </div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+              <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 14, fontWeight: 800, cursor: hasClone ? "pointer" : "not-allowed", opacity: hasClone ? 1 : 0.45 }}>
+                <input
+                  type="checkbox"
+                  checked={cloneEnabled && hasClone === true}
+                  disabled={!hasClone}
+                  onChange={(e) => toggleClone(e.target.checked)}
+                  style={{ width: 20, height: 20, accentColor: COLORS.accent }}
+                />
+                ON
+              </label>
+              <Link
+                to="/voice-setup"
+                className="btn-ghost"
+                style={{ minHeight: 44, display: "inline-flex", alignItems: "center", gap: 7, padding: "0 16px", fontSize: 14, textDecoration: "none" }}
+              >
+                <Settings2 size={16} aria-hidden="true" /> {hasClone ? "Re-record" : "Set up"}
+              </Link>
+            </div>
+          </div>
+        </section>
 
         {/* All voices grouped */}
         {groups.map((group) => (

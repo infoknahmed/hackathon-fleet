@@ -123,6 +123,67 @@ app.get('/api/replies/:userId', (req, res) => {
   res.json(db.getReplies(req.params.userId, lim));
 });
 
+/* ── Voice cloning (Phase 3) ─────────────────────────────── */
+
+// Coqui XTTS-v2 clone via Replicate when REPLICATE_API_TOKEN is set.
+// Without it, responds 501 + fallback:true so the client transparently
+// uses its local pitch-matched TTS instead of breaking.
+app.post('/api/tts/voice-clone', async (req, res) => {
+  try {
+    const text = String(req.body?.text || '').slice(0, 500);
+    const samples = Array.isArray(req.body?.samples) ? req.body.samples : [];
+    if (!text.trim()) return res.status(400).json({ error: 'text required' });
+    if (samples.length < 1) return res.status(400).json({ error: 'at least 1 voice sample required' });
+
+    const token = process.env.REPLICATE_API_TOKEN;
+    if (!token) {
+      return res.status(501).json({
+        error: 'voice cloning not configured on this deployment',
+        fallback: 'local-pitch',
+      });
+    }
+
+    // Fire-and-forget with timeout — Render free tier has limited CPU.    // Timeout for the whole provider round-trip (Render free tier CPU).
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 25000);
+    try {
+      const createRes = await fetch('https://api.replicate.com/v1/predictions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Token ${token}`,
+          'Content-Type': 'application/json',
+          Prefer: 'wait=20',
+        },
+        body: JSON.stringify({
+          version: 'lucataco/xtts-v2',
+          input: {
+            text,
+            language: 'en',
+            audio: samples[0], // data URI of the first voice sample
+          },
+        }),
+        signal: controller.signal,
+      });
+      const created = await createRes.json();
+      const outputUrl = created.output;
+      if (!outputUrl) {
+        // Replicate accepted the job but didn't finish within the wait window.
+        return res.status(202).json({ error: 'clone still processing', fallback: 'local-pitch' });
+      }
+      const audioRes = await fetch(outputUrl, { signal: controller.signal });
+      clearTimeout(timeout);
+      const audioBuf = Buffer.from(await audioRes.arrayBuffer());
+      res.set('Content-Type', 'audio/mpeg');
+      return res.send(audioBuf);
+    } catch (err) {
+      clearTimeout(timeout);
+      return res.status(502).json({ error: 'clone provider error', fallback: 'local-pitch' });
+    }
+  } catch (err) {
+    return res.status(500).json({ error: 'voice clone failed' });
+  }
+});
+
 /* ── Admin analytics ─────────────────────────────────────── */
 
 app.get('/api/admin/stats', (req, res) => {
