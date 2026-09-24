@@ -7,6 +7,7 @@ import CountUp from "../components/ui/CountUp"
 import Skeleton from "../components/ui/Skeleton"
 import SplitText from "../components/ui/SplitText"
 import { tokens } from "../styles/tokens"
+import { apiFetch } from "../lib/api"
 import { FONT } from "../theme"
 import TopNav from "../components/TopNav"
 
@@ -51,9 +52,7 @@ export default function DatabaseViewerPage() {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch("/api/messages?limit=100")
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data = (await res.json()) as DbMessage[]
+      const data = await apiFetch<DbMessage[]>("/api/messages?limit=100")
       setRows(data)
       setError(null)
       setLastLoad(Date.now())
