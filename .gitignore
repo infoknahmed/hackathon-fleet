@@ -37,3 +37,5 @@ venv/
 .hackit/_prompt_*
 .multifleet/
 .freebuff/
+.vercel
+.env*
